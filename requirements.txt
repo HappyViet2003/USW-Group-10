@@ -1,0 +1,10 @@
+alpaca-py
+pandas
+pytz
+pyyaml
+pyarrow
+matplotlib
+scipy
+duckdb
+torch
+scikit-learn

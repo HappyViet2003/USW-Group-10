@@ -35,7 +35,7 @@ For every minute from 2020-01-01 until 2025-01-01, we utilize the following feat
 ### 2. Data Acquisition
 
 **Approach**
-Unlike common approaches that rely on web scrapers (e.g., yfinance), we implemented a robust data pipeline using the official **Alpaca Market Data API (v2)**. This ensures high-quality, split-adjusted data directly from a regulated broker.
+We implemented a robust data pipeline using the official **Alpaca Market Data API (v2)**. This ensures high-quality, split-adjusted data directly from a regulated broker.
 
 **API Specification**
 - **Provider:** Alpaca Markets
@@ -51,6 +51,13 @@ We configured the data retrieval with the following parameters:
 - **Adjustment:** Raw crypto data (no stock splits applicable)
 
 **Storage Strategy**
-To handle the large volume of high-frequency data (approx. 2.6 million rows for 5 years of 1-minute data), we avoid CSV files.
+To handle the large volume of high-frequency data, we avoid CSV files.
 - **Format:** **Apache Parquet** (`.parquet`)
 - **Reasoning:** Parquet provides superior compression (reducing file size by ~70%) and significantly faster read/write speeds for time-series analysis compared to CSV.
+
+[project/scripts/01_data_acquisition/data_acquisition.py](project/scripts/01_data_acquisition/data_acquisition.py) contains the implementation of the data acquisition process.
+
+Pulls **1-minute** BTC/USD data from Alpaca API for the specified date range and saves it as a Parquet file for efficient storage and retrieval.
+
+Data preview:
+<img src="project/images/01_data_acquisition.png" alt="drawing" width="800"/>

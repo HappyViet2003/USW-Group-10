@@ -27,7 +27,6 @@ import yaml
 import os
 
 # 1. Load API credentials from YAML configuration file
-# (Stellt sicher, dass du die keys.yaml genau wie beim Dozenten angelegt hast)
 try:
     print("Loading API credentials from 'conf/keys.yaml'...")
     keys = yaml.safe_load(open("../../conf/keys.yaml"))
@@ -50,11 +49,9 @@ except FileNotFoundError:
     exit()
 
 # 3. Initialize the Alpaca Crypto Client
-# WICHTIG: Hier nutzen wir den CryptoClient statt StockClient
 client = CryptoHistoricalDataClient(api_key=API_KEY, secret_key=SECRET_KEY)
 
 # Define symbols to fetch.
-# Für dein Projekt reicht Bitcoin, aber du könntest hier auch ['ETH/USD', 'SOL/USD'] hinzufügen.
 symbols = ['BTC/USD']
 
 # Ensure output directory exists

@@ -3,23 +3,32 @@ import os
 
 # Pfad zu deiner Parquet-Datei
 # Tipp: In PyCharm Rechtsklick auf die Datei -> "Copy Path/Reference" -> "Absolute Path"
-file_path = "../../data/Bars_1m_crypto/BTC_USD.parquet"
+file_path_BTC = "../../data/Bars_1m_crypto/BTC_USD.parquet"
+file_path_GLD = "../../data/external_data_alpaca/GLD.parquet"
+file_path_QQQ = "../../data/external_data_alpaca/QQQ.parquet"
+file_path_UUP = "../../data/external_data_alpaca/UUP.parquet"
 
-# Falls du das Skript aus einem anderen Ordner startest, nutze den absoluten Pfad oder passe die ../ an.
-if not os.path.exists(file_path):
-    print("❌ Datei nicht gefunden! Prüfe den Pfad.")
-else:
-    # Datei laden
+def load_and_display_info(file_path):
     df = pd.read_parquet(file_path)
 
-    print("✅ Datei erfolgreich geladen!")
-    print(f"📊 Anzahl Zeilen: {len(df):,}")  # Zeigt z.B. 2,600,000
-    print(f"📅 Erster Eintrag: {df['timestamp'].min()}")
-    print(f"📅 Letzter Eintrag: {df['timestamp'].max()}")
+    print(f" Datei erfolgreich geladen: {file_path}")
+    print(f"📊 Anzahl Zeilen: {len(df):,}")
+    print(f" Erster Eintrag: {df['timestamp'].min()}")
+    print(f" Letzter Eintrag: {df['timestamp'].max()}")
 
     print("\nSo sehen die ersten 5 Zeilen aus:")
     print(df.head().to_string(index=False))
 
-    # Füge das in check_data.py ein:
     print("Alle Spaltennamen:")
     print(df.columns.tolist())
+    print("\n" + "-"*50 + "\n")
+
+# Falls du das Skript aus einem anderen Ordner startest, nutze den absoluten Pfad oder passe die ../ an.
+#if not os.path.exists(file_path_BTC, file_path_GLD, file_path_QQQ, file_path_UUP):
+if not all(os.path.exists(p) for p in (file_path_BTC, file_path_GLD, file_path_QQQ, file_path_UUP)):
+    print(" Datei nicht gefunden! Prüfe den Pfad.")
+else:
+    load_and_display_info(file_path_BTC)
+    load_and_display_info(file_path_GLD)
+    load_and_display_info(file_path_QQQ)
+    load_and_display_info(file_path_UUP)

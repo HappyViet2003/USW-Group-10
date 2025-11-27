@@ -4,7 +4,7 @@
 - Viet Anh Hönemann (Matrikelnummer: S0587778)
 - Julius Bollmann (Matrikelnummer: S0594551)
 
-## Trading Review: Problem Definition And Data Acquisition
+## Trading Review: Problem Definition, Data Acquisition & Understanding
 
 ### 1. Problem Definition
 
@@ -16,48 +16,64 @@ Specifically, we treat this as a **Binary Classification Problem**:
   - `0` (Short/Sell): Price(t+60) <= Price(t)
 
 **Input Variables (Features)**
-For every minute from 2020-01-01 until 2025-01-01, we utilize the following feature sets:
+For every minute from 2020-01-01 until 2025-01-01, we utilize a rich feature set combining crypto-native data with macroeconomic indicators:
 
-1.  **Raw Market Data (from Alpaca):**
-    - `Timestamp` (UTC)
-    - `Open`, `High`, `Low`, `Close` Prices
-    - `Volume` (Number of coins traded)
-    - `Trade Count` (Number of trades per minute)
+1.  **Crypto Market Data (24/7):**
+    - `BTC/USD`: Open, High, Low, Close, Volume, Trade Count, VWAP.
 
-2.  **Derived Technical Indicators (Feature Engineering):**
-    - **Momentum:** RSI (Relative Strength Index, 14-period) to identify overbought/oversold conditions.
-    - **Trend:** SMA (Simple Moving Average) and EMA (Exponential Moving Average) for 50 and 200 periods.
-    - **Volatility:** Bollinger Bands (Upper/Lower bands) to measure market deviations.
-    - **MACD:** Moving Average Convergence Divergence to spot trend reversals.
+2.  **Macroeconomic Correlation Indicators (Market Hours):**
+    To capture "Risk-On/Risk-Off" sentiment and dollar strength, we include external assets:
+    - **Tech Sentiment:** `QQQ` (Invesco QQQ Trust) as a proxy for the **Nasdaq-100**.
+    - **Safe Haven:** `GLD` (SPDR Gold Shares) as a proxy for **Gold**.
+    - **Currency Strength:** `UUP` (Invesco DB US Dollar Index Bullish Fund) as a proxy for the **US Dollar Index (DXY)**.
+
+3.  **Derived Technical Indicators (Feature Engineering):**
+    - **Momentum:** RSI (14), MACD.
+    - **Trend:** SMA (50), EMA (200).
+    - **Volatility:** Bollinger Bands.
+    - **Pattern Recognition:** Automated detection using `pandas-ta`.
 
 ---
 
-### 2. Data Acquisition
+### 2. Data Acquisition Strategy
 
-**Approach**
-We implemented a robust data pipeline using the official **Alpaca Market Data API (v2)**. This ensures high-quality, split-adjusted data directly from a regulated broker.
+**"Alpaca-Only" Ecosystem**
+To ensure data consistency and reliability, we strictly avoided web scraping (e.g., yfinance). Instead, we architected a solution that fetches **both** Cryptocurrency and Stock Market data solely via the **Alpaca Market Data API (v2)**.
 
-**API Specification**
-- **Provider:** Alpaca Markets
-- **API Service:** `CryptoHistoricalDataClient` (Alpaca-py SDK)
-- **Data Feed:** Global Crypto Feed (accessing multiple exchanges)
-- **Asset Class:** Cryptocurrency (Bitcoin)
+**Handling Asynchronous Markets**
+A key challenge was merging 24/7 Crypto data with Stock data (which has weekends and holidays).
+- **Solution:** We use **Forward Filling (`ffill`)** logic. If the Nasdaq is closed (e.g., on Saturday), the last known Friday price is carried forward to maintain a continuous time-series for the Bitcoin trading bot without dropping data.
 
-**Parameters**
-We configured the data retrieval with the following parameters:
-- **Symbol:** `BTC/USD`
-- **Timeframe:** `1 Minute` (High-frequency granularity)
-- **Date Range:** `2020-01-01` to `2025-01-01`
-- **Adjustment:** Raw crypto data (no stock splits applicable)
+**Technical Specs**
+- **API Services:** `CryptoHistoricalDataClient` (for BTC) & `StockHistoricalDataClient` (for ETFs).
+- **Timeframe:** `1 Minute` (High-frequency granularity).
+- **Storage:** **Apache Parquet** (`.parquet`) for high-performance I/O and compression.
 
-**Storage Strategy**
-To handle the large volume of high-frequency data, we avoid CSV files.
-- **Format:** **Apache Parquet** (`.parquet`)
-- **Reasoning:** Parquet provides superior compression (reducing file size by ~70%) and significantly faster read/write speeds for time-series analysis compared to CSV.
+**Scripts:**
+- [`project/scripts/01_data_acquisition/data_acquisition.py`](project/scripts/01_data_acquisition/data_acquisition.py): Fetches BTC/USD.
 
-[project/scripts/01_data_acquisition/data_acquisition.py](project/scripts/01_data_acquisition/data_acquisition.py) contains the implementation of the data acquisition process.
+<img src="project/images/01_data_acquisition_BTC.png" alt="Normalized Performance" width="700"/>
 
-Pulls **1-minute** BTC/USD data from Alpaca API for the specified date range and saves it as a Parquet file for efficient storage and retrieval.
+- [`project/scripts/01_data_acquisition/fetch_external_data.py`](project/scripts/01_data_acquisition/fetch_external_data.py): Fetches QQQ, GLD, UUP.
 
-Data preview:
-<img src="project/images/01_data_acquisition.png" alt="drawing" width="800"/>
+<img src="project/images/01_data_acquisition_External.png" alt="Normalized Performance" width="700"/>
+
+---
+
+### 3. Data Understanding & Visualization
+
+We implemented an automated plotting pipeline [`project/scripts/02_data_understanding/plotter.py`](project/scripts/02_data_understanding/plotter.py) to inspect data quality and correlations.
+
+**Visual Outputs (generated in `project/images`):**
+1.  **Normalized Performance:** Compares relative growth of BTC vs. Nasdaq/Gold (Start = 100%).
+2.  **Asset Subplots:** Checks for data gaps and structural integrity across all assets.
+3.  **Correlation Matrix:** Analyzes the relationship between Bitcoin returns and Macro factors (e.g., negative correlation with USD).
+
+
+**Example Plots:**
+- *Normalized Performance Comparison*  
+  <img src="project/images/02_performance_comparison.png" alt="Normalized Performance" width="700"/>
+- *Correlation Matrix*  
+  <img src="project/images/02_correlation_matrix.png" alt="Correlation Matrix" width="500"/>
+- *Asset Subplots*  
+  <img src="project/images/02_asset_subplots.png" alt="Asset Subplots" width="700"/>

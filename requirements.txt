@@ -8,3 +8,4 @@ scipy
 duckdb
 torch
 scikit-learn
+seaborn

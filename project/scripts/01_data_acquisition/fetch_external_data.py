@@ -237,47 +237,58 @@ def fetch_fred_m2(keys, params, output_path):
 def fetch_yfinance_rates(params, OUTPUT_PATH):
     print("\n--- [3/3] YFinance: US-Zinsen (Treasury Yields) ---")
     # ^TNX = CBOE Interest Rate 10 Year Treasury Note
-    ticker = "^TNX"
+    # NEU: Wir laden jetzt Zinsen UND den Nasdaq Future
+    targets = {
+        "^TNX": "US_INTEREST_RATES.parquet",  # Zinsen (bleibt gleich)
+        "NQ=F": "NASDAQ_FUTURE.parquet"  # <--- NEU: Nasdaq 100 Futures
+    }
 
     # Parameter
     START_DATE = datetime.strptime(params['DATA_ACQUISITON']['START_DATE'], "%Y-%m-%d")
     END_DATE = datetime.strptime(params['DATA_ACQUISITON']['END_DATE'], "%Y-%m-%d")
 
+    for ticker, filename in targets.items():
+        try:
+            print(f"   Lade {ticker}...")
 
-    try:
-        print(f"   Lade {ticker}...")
-        # Intervall 1d (Zinsen gibt es nicht minütlich via yfinance free)
-        df = yf.download(ticker, start=START_DATE, end=END_DATE, interval="1d", progress=False)
+            # WICHTIG: Intervall auf '1h' setzen für Futures (Minuten-Daten sind bei Yahoo oft limitiert)
+            # Falls Yahoo meckert, nimm '1d', aber '1h' ist besser für Futures.
+            interval = "1h" if ticker == "NQ=F" else "1d"
 
-        # Yahoo MultiIndex Fix
-        if isinstance(df.columns, pd.MultiIndex):
-            df.columns = df.columns.get_level_values(0)
+            # Intervall 1d (Zinsen gibt es nicht minütlich via yfinance free)
+            df = yf.download(ticker, start=START_DATE, end=END_DATE, interval="1d", progress=False)
 
-        df.reset_index(inplace=True)
-        # Wir brauchen nur Datum und Close (Yield)
-        df = df[['Date', 'Close']].rename(columns={'Date': 'timestamp', 'Close': 'US_10Y_YIELD'})
+            # Yahoo MultiIndex Fix
+            if isinstance(df.columns, pd.MultiIndex):
+                df.columns = df.columns.get_level_values(0)
 
-        # Zeitzone (Yahoo liefert oft naive oder lokale Zeit -> UTC)
-        if df['timestamp'].dt.tz is None:
-            df['timestamp'] = df['timestamp'].dt.tz_localize('UTC')
-        else:
-            df['timestamp'] = df['timestamp'].dt.tz_convert('UTC')
+            df.reset_index(inplace=True)
+            # Spalten standardisieren (Yahoo nennt Datum mal 'Date', mal 'Datetime')
+            rename_map = {'Date': 'timestamp', 'Datetime': 'timestamp', 'Close': 'close'}
+            df.rename(columns=rename_map, inplace=True)
+            df = df[['timestamp', 'close']]  # Wir brauchen nur Zeit und Preis
 
-        # Speichern
-        save_path = os.path.join(OUTPUT_PATH, "US_INTEREST_RATES.parquet")
-        df.to_parquet(save_path, index=False)
-        print(f"   ✅ US-Zinsen gespeichert ({len(df)} Zeilen, täglich)")
+            # Zeitzone (Yahoo liefert oft naive oder lokale Zeit -> UTC)
+            if df['timestamp'].dt.tz is None:
+                df['timestamp'] = df['timestamp'].dt.tz_localize('UTC')
+            else:
+                df['timestamp'] = df['timestamp'].dt.tz_convert('UTC')
 
-        return {
-            'success': True,
-            'rows': len(df),
-            'path': save_path,
-            'date_range': (df['timestamp'].min(), df['timestamp'].max())
-        }
+            # Speichern
+            save_path = os.path.join(OUTPUT_PATH, "US_INTEREST_RATES.parquet")
+            df.to_parquet(save_path, index=False)
+            print(f"   ✅ US-Zinsen gespeichert ({len(df)} Zeilen, täglich)")
 
-    except Exception as e:
-        print(f"   ❌ Fehler bei YFinance Zinsen: {e}")
-        return {'success': False, 'error': str(e)}
+            return {
+                'success': True,
+                'rows': len(df),
+                'path': save_path,
+                'date_range': (df['timestamp'].min(), df['timestamp'].max())
+            }
+
+        except Exception as e:
+            print(f"   ❌ Fehler bei YFinance Zinsen: {e}")
+            return {'success': False, 'error': str(e)}
 
 # ============================================================================
 # MAIN

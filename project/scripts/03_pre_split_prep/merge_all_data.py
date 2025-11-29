@@ -37,6 +37,7 @@ print(f"   ✅ BTC: {len(df):,} Zeilen")
 # (Dateiname -> Prefix für Spalten)
 external_sources = {
     'QQQ.parquet': 'qqq',
+    'NASDAQ_FUTURE.parquet': 'nq',
     'GLD.parquet': 'gold',
     'UUP.parquet': 'usd',
     'M2.parquet': 'm2',  # Wöchentlich

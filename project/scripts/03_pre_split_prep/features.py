@@ -25,8 +25,17 @@ print("\n   Berechne Indikatoren...")
 
 # A. Makro-Features (Verhältnisse)
 # Wie stark ist Bitcoin im Vergleich zu Tech-Aktien?
-if 'qqq_close' in df.columns:
+# Wir prüfen jetzt auf 'nq_close' (Future) statt 'qqq_close' (ETF)
+
+if 'nq_close' in df.columns:
+    # Verhältnis Bitcoin zu Nasdaq Future
+    df['ratio_btc_nq'] = df['close'] / df['nq_close']
+    print("   Feature erstellt: ratio_btc_nq (basierend auf Futures)")
+
+elif 'qqq_close' in df.columns:
+    # Fallback: Falls Futures fehlen, nimm QQQ
     df['ratio_btc_qqq'] = df['close'] / df['qqq_close']
+    print("   Feature erstellt: ratio_btc_qqq (basierend auf ETF)")
 
 # Wie stark drückt der Zins?
 if 'rates_US_10Y_YIELD' in df.columns:

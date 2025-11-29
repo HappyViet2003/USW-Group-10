@@ -9,3 +9,4 @@ duckdb
 torch
 scikit-learn
 seaborn
+yfinance

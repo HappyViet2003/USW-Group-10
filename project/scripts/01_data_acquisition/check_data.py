@@ -7,6 +7,7 @@ file_path_BTC = "../../data/Bars_1m_crypto/BTC_USD.parquet"
 file_path_GLD = "../../data/external_data_alpaca/GLD.parquet"
 file_path_QQQ = "../../data/external_data_alpaca/QQQ.parquet"
 file_path_UUP = "../../data/external_data_alpaca/UUP.parquet"
+file_path_M2 = "../../data/external_data_alpaca/M2.parquet"
 
 def load_and_display_info(file_path):
     df = pd.read_parquet(file_path)
@@ -32,3 +33,4 @@ else:
     load_and_display_info(file_path_GLD)
     load_and_display_info(file_path_QQQ)
     load_and_display_info(file_path_UUP)
+    load_and_display_info(file_path_M2)

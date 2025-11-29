@@ -4,10 +4,11 @@ import os
 # Pfad zu deiner Parquet-Datei
 # Tipp: In PyCharm Rechtsklick auf die Datei -> "Copy Path/Reference" -> "Absolute Path"
 file_path_BTC = "../../data/Bars_1m_crypto/BTC_USD.parquet"
-file_path_GLD = "../../data/external_data_alpaca/GLD.parquet"
-file_path_QQQ = "../../data/external_data_alpaca/QQQ.parquet"
-file_path_UUP = "../../data/external_data_alpaca/UUP.parquet"
-file_path_M2 = "../../data/external_data_alpaca/M2.parquet"
+file_path_GLD = "../../data/external_data/GLD.parquet"
+file_path_QQQ = "../../data/external_data/QQQ.parquet"
+file_path_UUP = "../../data/external_data/UUP.parquet"
+file_path_M2 = "../../data/external_data/M2.parquet"
+file_path_US_Interest_Rate = "../../data/external_data/US_INTEREST_RATES.parquet"
 
 def load_and_display_info(file_path):
     df = pd.read_parquet(file_path)
@@ -34,3 +35,4 @@ else:
     load_and_display_info(file_path_QQQ)
     load_and_display_info(file_path_UUP)
     load_and_display_info(file_path_M2)
+    load_and_display_info(file_path_US_Interest_Rate)

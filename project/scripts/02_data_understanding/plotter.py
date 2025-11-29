@@ -13,7 +13,7 @@ try:
     # Datenpfade
     base_data_path = os.path.join(script_dir, params['DATA_ACQUISITON']['DATA_PATH'])
     crypto_path = os.path.join(base_data_path, "Bars_1m_crypto", "BTC_USD.parquet")
-    external_path = os.path.join(base_data_path, "external_data_alpaca")
+    external_path = os.path.join(base_data_path, "external_data")
 except FileNotFoundError:
     print("Error: 'conf/params.yaml' not found. Please check your config.")
     exit()

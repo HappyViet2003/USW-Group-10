@@ -5,7 +5,7 @@ Dieses Skript lädt:
 1. ETF-Daten von Alpaca (QQQ, GLD, UUP)
 2. M2-Geldmenge von FRED API
 
-Alle Daten werden im gleichen Ordner gespeichert: external_data_alpaca/
+Alle Daten werden im gleichen Ordner gespeichert: external_data/
 
 Voraussetzungen:
 - Alpaca API Keys in conf/keys.yaml
@@ -60,7 +60,7 @@ def fetch_alpaca_etfs(keys, params, script_dir):
 
     # Parameter
     base_path = params['DATA_ACQUISITON']['DATA_PATH']
-    OUTPUT_PATH = os.path.join(script_dir, base_path, 'external_data_alpaca')
+    OUTPUT_PATH = os.path.join(script_dir, base_path, 'external_data')
     os.makedirs(OUTPUT_PATH, exist_ok=True)
 
     START_DATE = datetime.strptime(params['DATA_ACQUISITON']['START_DATE'], "%Y-%m-%d")

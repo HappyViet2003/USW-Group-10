@@ -3,7 +3,8 @@ import os
 
 # Pfad zu deiner Parquet-Datei
 # Tipp: In PyCharm Rechtsklick auf die Datei -> "Copy Path/Reference" -> "Absolute Path"
-file_path_merged = "../../data/processed/training_data_final.parquet"
+file_path_merged = "../../data/processed/merged_raw_data.parquet"
+file_path_training = "../../data/processed/training_data.parquet"
 
 def load_and_display_info(file_path):
     df = pd.read_parquet(file_path)
@@ -23,7 +24,8 @@ def load_and_display_info(file_path):
 
 # Falls du das Skript aus einem anderen Ordner startest, nutze den absoluten Pfad oder passe die ../ an.
 #if not os.path.exists(file_path_BTC, file_path_GLD, file_path_QQQ, file_path_UUP):
-if not all(os.path.exists(p) for p in (file_path_merged,)):
+if not all(os.path.exists(p) for p in (file_path_merged, file_path_training)):
     print(" Datei nicht gefunden! Prüfe den Pfad.")
 else:
     load_and_display_info(file_path_merged)
+    load_and_display_info(file_path_training)

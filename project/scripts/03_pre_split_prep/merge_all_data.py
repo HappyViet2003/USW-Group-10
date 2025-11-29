@@ -84,10 +84,7 @@ df.ffill(inplace=True)
 df.dropna(inplace=True)
 print(f"   Zeilen nach DropNA: {len(df):,} (Start-Lücken entfernt)")
 
-
-##TODO Feature In seperate script?
-
-# --- 7. SPEICHERN ---
+# --- SPEICHERN ---
 print(f"\n💾 Speichere finalen Datensatz: {output_file}")
 df.to_parquet(output_file, index=False)
 

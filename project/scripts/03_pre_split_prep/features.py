@@ -85,7 +85,10 @@ df['hour'] = df['timestamp'].dt.hour
 # --- 5. OUTLIER DETECTION ---
 print("   Filtere Ausreißer (Z-Score)...")
 z_scores = ((df['log_ret'] - df['log_ret'].mean()) / df['log_ret'].std()).abs()
-df = df[z_scores < 10]
+#df = df[z_scores < 10]
+# Statt löschen: Werte auf +/- 10 Sigma begrenzen
+df['log_ret'] = df['log_ret'].clip(lower=-10 * df['log_ret'].std(),
+                                   upper= 10 * df['log_ret'].std())
 
 # --- 6. TARGET VARIABLE ---
 prediction_window = 60

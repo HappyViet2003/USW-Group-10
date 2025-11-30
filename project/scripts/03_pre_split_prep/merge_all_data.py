@@ -30,6 +30,7 @@ if not os.path.exists(crypto_path):
 
 print("   Lade Bitcoin Basis-Daten...")
 df = pd.read_parquet(crypto_path)
+df = df.drop_duplicates(subset=['timestamp'])
 df = df.sort_values('timestamp')
 print(f"   ✅ BTC: {len(df):,} Zeilen")
 

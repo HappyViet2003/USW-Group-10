@@ -234,7 +234,7 @@ def fetch_fred_m2(keys, params, output_path):
 # TEIL 3: YFinance Zinsen-DATEN (NEU)
 # ============================================================================
 
-# --- METHODE 3: YFINANCE (Zinsen) ---
+# --- METHODE 3: YFINANCE (Zinsen, Futures) ---
 def fetch_yfinance_rates(params, OUTPUT_PATH):
     print("\n--- [3/3] YFinance: US-Zinsen (Treasury Yields) ---")
     # ^TNX = CBOE Interest Rate 10 Year Treasury Note
@@ -248,25 +248,30 @@ def fetch_yfinance_rates(params, OUTPUT_PATH):
     START_DATE = datetime.strptime(params['DATA_ACQUISITON']['START_DATE'], "%Y-%m-%d")
     END_DATE = datetime.strptime(params['DATA_ACQUISITON']['END_DATE'], "%Y-%m-%d")
 
+    results = {}
+
     for ticker, filename in targets.items():
         try:
             print(f"   Lade {ticker}...")
 
-            # WICHTIG: Intervall auf '1h' setzen für Futures (Minuten-Daten sind bei Yahoo oft limitiert)
-            # Falls Yahoo meckert, nimm '1d', aber '1h' ist besser für Futures.
-            interval = "1h" if ticker == "NQ=F" else "1d"
+            # WICHTIG: Intervall-Logik
+            # Zinsen (^TNX) gibt es meist nur täglich ('1d').
+            # Futures (NQ=F) und NVDA handeln oft, daher nehmen wir '1h'.
+            #interval = "1d" if ticker == "^TNX" else "1h"
+            interval = "1d"
 
-            # Intervall 1d (Zinsen gibt es nicht minütlich via yfinance free)
-            df = yf.download(ticker, start=START_DATE, end=END_DATE, interval="1d", progress=False)
+            df = yf.download(ticker, start=START_DATE, end=END_DATE, interval=interval, progress=False)
 
             # Yahoo MultiIndex Fix
             if isinstance(df.columns, pd.MultiIndex):
                 df.columns = df.columns.get_level_values(0)
 
             df.reset_index(inplace=True)
+
             # Spalten standardisieren (Yahoo nennt Datum mal 'Date', mal 'Datetime')
             rename_map = {'Date': 'timestamp', 'Datetime': 'timestamp', 'Close': 'close'}
             df.rename(columns=rename_map, inplace=True)
+
             df = df[['timestamp', 'close']]  # Wir brauchen nur Zeit und Preis
 
             # Zeitzone (Yahoo liefert oft naive oder lokale Zeit -> UTC)
@@ -276,21 +281,19 @@ def fetch_yfinance_rates(params, OUTPUT_PATH):
                 df['timestamp'] = df['timestamp'].dt.tz_convert('UTC')
 
             # Speichern
-            save_path = os.path.join(OUTPUT_PATH, "US_INTEREST_RATES.parquet")
+            save_path = os.path.join(OUTPUT_PATH, filename)
             df.to_parquet(save_path, index=False)
-            print(f"   ✅ US-Zinsen gespeichert ({len(df)} Zeilen, täglich)")
 
-            return {
-                'success': True,
-                'rows': len(df),
-                'path': save_path,
-                'date_range': (df['timestamp'].min(), df['timestamp'].max())
-            }
+            print(f"   ✅ {filename} gespeichert ({len(df)} Zeilen)")
+
+            # Ergebnis speichern (NICHT returnen!)
+            results[ticker] = {'success': True, 'rows': len(df)}
 
         except Exception as e:
-            print(f"   ❌ Fehler bei YFinance Zinsen: {e}")
-            return {'success': False, 'error': str(e)}
+            print(f"   ❌ Fehler bei {ticker}: {e}")
+            results[ticker] = {'success': False, 'error': str(e)}
 
+    return results
 # ============================================================================
 # MAIN
 # ============================================================================
@@ -313,7 +316,7 @@ def main():
     m2_result = fetch_fred_m2(keys, params, output_path)
 
     # Teil 3: YFinance Zinsen-Daten
-    interest_result = fetch_yfinance_rates(params, output_path)
+    yfinance_result = fetch_yfinance_rates(params, output_path)
 
     # Zusammenfassung
     print("\n" + "=" * 70)
@@ -333,11 +336,14 @@ def main():
     else:
         print(f"  ⚠️  M2: {m2_result['error']}")
 
-    print("\nYFinance Interest Data:")
-    if interest_result['success']:
-        print(f"  ✅ Yields: {interest_result['rows']:,} observations")
-    else:
-        print(f"  ⚠️  Yields: {interest_result['error']}")
+    # --- KORRIGIERTER BLOCK FÜR YFINANCE ---
+    print("\nYFinance Data (Futures & Rates):")
+    for ticker, result in yfinance_result.items():
+        if result['success']:
+            print(f"  ✅ {ticker}: {result['rows']:,} rows")
+        else:
+            print(f"  ❌ {ticker}: {result['error']}")
+    # ---------------------------------------
 
     print(f"\n💾 All data saved to: {output_path}")
 

@@ -9,6 +9,7 @@ file_path_QQQ = "../../data/external_data/QQQ.parquet"
 file_path_UUP = "../../data/external_data/UUP.parquet"
 file_path_M2 = "../../data/external_data/M2.parquet"
 file_path_US_Interest_Rate = "../../data/external_data/US_INTEREST_RATES.parquet"
+file_path_NVDA = "../../data/external_data/NVDA.parquet"
 
 def load_and_display_info(file_path):
     df = pd.read_parquet(file_path)

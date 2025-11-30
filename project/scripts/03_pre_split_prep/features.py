@@ -37,6 +37,18 @@ elif 'qqq_close' in df.columns:
     df['ratio_btc_qqq'] = df['close'] / df['qqq_close']
     print("   Feature erstellt: ratio_btc_qqq (basierend auf ETF)")
 
+if 'nvda_close' in df.columns:
+    # NEU: Das "AI-Rotation-Ratio"
+    # Zeigt an: Ist Bitcoin stärker als der AI-Hype?
+    df['ratio_btc_nvda'] = df['close'] / df['nvda_close']
+
+    # NEU: Hype-Korrelation (rollend über 30 Tage / 43200 Minuten)
+    # Wenn Korrelation hoch ist (nahe 1), bewegen sich beide im Gleichschritt (Risk-On)
+    # Wir nehmen hier ein kürzeres Fenster, z.B. 1 Woche (ca. 10.000 Minuten)
+    df['corr_btc_nvda_1w'] = df['close'].rolling(10080).corr(df['nvda_close'])
+
+    print("   Feature erstellt: ratio_btc_nvda & corr_btc_nvda")
+
 # Wie stark drückt der Zins?
 if 'rates_US_10Y_YIELD' in df.columns:
     # Zinsen sind in Prozent (z.B. 4.5), wir skalieren das

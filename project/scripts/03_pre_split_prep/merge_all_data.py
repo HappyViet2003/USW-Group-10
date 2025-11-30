@@ -41,7 +41,8 @@ external_sources = {
     'GLD.parquet': 'gold',
     'UUP.parquet': 'usd',
     'M2.parquet': 'm2',  # Wöchentlich
-    'US_INTEREST_RATES.parquet': 'rates'  # Täglich
+    'US_INTEREST_RATES.parquet': 'rates',  # Täglich
+    'NVDA.parquet': 'nvda'
 }
 
 # --- 2. INTELLIGENTES MERGING (Merge AsOf) ---

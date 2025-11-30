@@ -73,7 +73,8 @@ def fetch_alpaca_etfs(keys, params, script_dir):
     # QQQ = Nasdaq 100 (Tech korreliert oft mit Krypto)
     # GLD = Gold (Safe Haven Asset)
     # UUP = US Dollar Index (Starker Dollar drückt oft Krypto-Preise)
-    symbols = ['QQQ', 'GLD', 'UUP']
+    # NVDA = Nvidia (Leitaktie im KI-Zeitalter, stark mit Tech/Krypto verbunden)
+    symbols = ['QQQ', 'GLD', 'UUP', 'NVDA']
 
     print(f"\nSymbols to fetch: {symbols}")
     print(f"Date range: {START_DATE} to {END_DATE}")

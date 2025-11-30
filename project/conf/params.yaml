@@ -2,3 +2,9 @@ DATA_ACQUISITON:
   DATA_PATH: "../../data"
   START_DATE: "2020-01-01"
   END_DATE: "2025-01-01"
+
+DATA_SPLIT:
+  TRAIN_SIZE: 0.60
+  VALIDATION_SIZE: 0.20
+  TEST_SIZE: 0.20
+  SPLIT_PATH: "../../data/processed/split"

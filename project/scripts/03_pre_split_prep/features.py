@@ -41,6 +41,28 @@ df['log_ret'] = np.log(df['close'] / df['close'].shift(1))
 df['log_ret_5m'] = np.log(df['close'] / df['close'].shift(5))
 df['volatility_60m'] = df['log_ret'].rolling(window=60).std()
 
+# ------------------------------------------------------------------------------
+# VOLUMEN-INDIKATOREN (Der "Treibstoff") ###
+# ------------------------------------------------------------------------------
+# OBV (On-Balance Volume): Bestätigt Trends. Steigt OBV bei steigendem Preis -> Gesund.
+# Empfohlen in "Weitere Features.pdf"
+df['obv'] = ta.obv(df['close'], df['volume'])
+# Wir normalisieren OBV als Slope, da der absolute Wert egal ist
+df['obv_slope'] = slope(df['obv'], period=5)
+
+# MFI (Money Flow Index): Wie RSI, aber mit Volumen. Zeigt "Smart Money".
+df['mfi_14'] = ta.mfi(df['high'], df['low'], df['close'], df['volume'], length=14)
+df['mfi_14_norm'] = z_norm(df['mfi_14'], window=1440)
+
+# ------------------------------------------------------------------------------
+# VOLATILITÄT (Das "Markt-Regime") ###
+# ------------------------------------------------------------------------------
+# ATR (Average True Range): Misst die absolute Schwankungsbreite in Dollar
+df['atr_14'] = ta.atr(df['high'], df['low'], df['close'], length=14)
+# Relativer ATR (in % vom Preis), damit es vergleichbar bleibt
+df['atr_pct'] = df['atr_14'] / df['close']
+df['atr_norm'] = z_norm(df['atr_pct'], window=1440)
+
 # A. Makro-Features
 if 'nq_close' in df.columns:
     df['ratio_btc_nq'] = df['close'] / df['nq_close']
@@ -79,16 +101,26 @@ df['slope_close_norm'] = z_norm(df['slope_close_5'], window=1440)
 df['slope_sma_norm'] = z_norm(df['slope_sma_50'], window=1440)
 
 # C. Zeit-Features
-df['day_of_week'] = df['timestamp'].dt.dayofweek
-df['hour'] = df['timestamp'].dt.hour
+#df['day_of_week'] = df['timestamp'].dt.dayofweek
+#df['hour'] = df['timestamp'].dt.hour
+
+# ------------------------------------------------------------------------------
+# ZYKLISCHE ZEIT (Sinus/Cosinus) ###
+# ------------------------------------------------------------------------------
+# Damit das Modell versteht, dass 23 Uhr und 0 Uhr nah beieinander sind.
+print("   Erstelle zyklische Zeit-Features...")
+df['hour_sin'] = np.sin(2 * np.pi * df['timestamp'].dt.hour / 24)
+df['hour_cos'] = np.cos(2 * np.pi * df['timestamp'].dt.hour / 24)
+df['day_sin'] = np.sin(2 * np.pi * df['timestamp'].dt.dayofweek / 7)
+df['day_cos'] = np.cos(2 * np.pi * df['timestamp'].dt.dayofweek / 7)
 
 # --- 5. OUTLIER DETECTION ---
 print("   Filtere Ausreißer (Z-Score)...")
 z_scores = ((df['log_ret'] - df['log_ret'].mean()) / df['log_ret'].std()).abs()
-#df = df[z_scores < 10]
+df = df[z_scores < 10]
 # Statt löschen: Werte auf +/- 10 Sigma begrenzen
-df['log_ret'] = df['log_ret'].clip(lower=-10 * df['log_ret'].std(),
-                                   upper= 10 * df['log_ret'].std())
+#df['log_ret'] = df['log_ret'].clip(lower=-10 * df['log_ret'].std(),
+#                                   upper= 10 * df['log_ret'].std())
 
 # --- 6. TARGET VARIABLE ---
 prediction_window = 60

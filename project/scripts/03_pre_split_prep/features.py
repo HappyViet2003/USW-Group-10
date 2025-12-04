@@ -99,12 +99,29 @@ df['target'] = (df['future_close'] > df['close']).astype(int)
 df.dropna(subset=['future_close'], inplace=True)
 df.drop(columns=['future_close'], inplace=True)
 
-# --- 7. SAMPLE WEIGHTS (NEU!) ---
-# Lineare Gewichtung: Alte Daten (Start) = 0.5, Neue Daten (Ende) = 1.5
+# --- 7. SAMPLE WEIGHTS (Monatsbasiert) ---
+# Gewichtung nach Monat: Ältere Monate = niedrigere Gewichtung, neuere Monate = höhere Gewichtung
 # Das sorgt dafür, dass der "Concept Drift" berücksichtigt wird.
-print("   Berechne Zeit-Gewichtung (Sample Weights)...")
-weights = np.linspace(0.5, 1.5, len(df))
-df['sample_weight'] = weights
+print("   Berechne Zeit-Gewichtung (Sample Weights nach Monat)...")
+
+# Erstelle Jahr-Monat-Spalte
+df['year_month'] = df['timestamp'].dt.to_period('M')
+
+# Zähle eindeutige Monate und weise jedem eine Gewichtung zu
+unique_months = df['year_month'].unique()
+num_months = len(unique_months)
+
+# Erstelle Mapping: Monat → Gewichtung (linear von 0.5 bis 1.5)
+month_weights = np.linspace(0.5, 1.5, num_months)
+month_to_weight = dict(zip(unique_months, month_weights))
+
+# Weise jedem Datensatz die Gewichtung seines Monats zu
+df['sample_weight'] = df['year_month'].map(month_to_weight)
+
+# Entferne temporäre Spalte
+df = df.drop(columns=['year_month'])
+
+print(f"   ✅ {num_months} Monate gewichtet (Min: {df['sample_weight'].min():.2f}, Max: {df['sample_weight'].max():.2f})")
 
 # --- FINALER CLEANUP ---
 print(f"   Vor dem finalen Cleanup: {len(df):,} Zeilen")

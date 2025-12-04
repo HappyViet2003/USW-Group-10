@@ -116,6 +116,7 @@ month_weights = np.linspace(0.5, 1.5, num_months)
 month_to_weight = dict(zip(unique_months, month_weights))
 
 # Weise jedem Datensatz die Gewichtung seines Monats zu
+#
 df['sample_weight'] = df['year_month'].map(month_to_weight)
 
 # Entferne temporäre Spalte

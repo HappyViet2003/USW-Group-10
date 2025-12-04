@@ -12,3 +12,4 @@ seaborn
 yfinance
 pandas_ta
 numpy
+xgboost

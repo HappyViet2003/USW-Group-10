@@ -1,8 +1,8 @@
 """
-06_modeling/02_xgboost_model.py
+06_modelling/xgboost_model.py
 
 Trainiert ein XGBoost-Modell für die BTC-Prognose.
-XGBoost ist besonders gut für strukturierte/tabellarische Daten.
+Update: Entfernt radikal alle absoluten Preis-Features, um Overfitting zu verhindern.
 """
 
 import os
@@ -12,10 +12,8 @@ import numpy as np
 import xgboost as xgb
 from sklearn.metrics import (
     accuracy_score, precision_score, recall_score, f1_score,
-    confusion_matrix, classification_report, roc_auc_score
+    confusion_matrix, roc_auc_score
 )
-import joblib
-import json
 
 # ==============================================================================
 # KONFIGURATION
@@ -27,12 +25,12 @@ params = yaml.safe_load(open(params_path))
 base_data_path = os.path.join(script_dir, params['DATA_ACQUISITON']['DATA_PATH'])
 prep_dir = os.path.join(base_data_path, "processed", "prepared")
 
-# Output
+# Output Ordner
 models_dir = os.path.join(base_data_path, "models")
 os.makedirs(models_dir, exist_ok=True)
 
 print("=" * 70)
-print("XGBOOST MODEL")
+print("XGBOOST MODEL TRAINING (No-Overfit Edition)")
 print("=" * 70)
 
 # ==============================================================================
@@ -40,225 +38,171 @@ print("=" * 70)
 # ==============================================================================
 print("\n[1/5] Lade vorbereitete Daten...")
 
+# Wir laden die Daten (Timestamp muss enthalten sein durch den Fix in step 05)
 train_df = pd.read_parquet(os.path.join(prep_dir, "train_prepared.parquet"))
 val_df = pd.read_parquet(os.path.join(prep_dir, "val_prepared.parquet"))
 test_df = pd.read_parquet(os.path.join(prep_dir, "test_prepared.parquet"))
 
-# Features und Target trennen
-feature_cols = [col for col in train_df.columns 
-                if col not in ['timestamp', 'target']]
+# --- FEATURE SELECTION: Absolute Preise verbannen ---
+# Wir entfernen alles, was "Dollar-Beträge" sind, da diese sich über Jahre ändern (Instationarität).
+exclude_cols = [
+    # 1. Metadaten
+    'timestamp', 'target', 'sample_weight', 'future_close', 'year_month',
 
+    # 2. Bitcoin Absolute Preise
+    'open', 'high', 'low', 'close', 'volume', 'vwap',
+    'local_high', 'local_low',
+    'sma_50', 'ema_200',
+    'obv',  # Nur obv_slope erlaubt
+
+    # 3. Externe Absolute Preise (Alles was Open/High/Low/Close/Vol/VWAP heißt)
+    'qqq_open', 'qqq_high', 'qqq_low', 'qqq_close', 'qqq_volume', 'qqq_vwap',
+    'nvda_open', 'nvda_high', 'nvda_low', 'nvda_close', 'nvda_volume', 'nvda_vwap',
+    'nq_open', 'nq_high', 'nq_low', 'nq_close', 'nq_volume',
+    'gld_open', 'gld_high', 'gld_low', 'gld_close', 'gld_volume', 'gld_vwap',
+    'uup_open', 'uup_high', 'uup_low', 'uup_close', 'uup_volume', 'uup_vwap',
+    'usd_open', 'usd_high', 'usd_low', 'usd_close', 'usd_volume', 'usd_vwap',  # <-- NEU: usd_vwap raus
+
+    'rates_open', 'rates_high', 'rates_low', 'rates_close',
+    'm2_close', 'm2_value',
+
+    # 4. Versteckte Absolute Werte
+    'trade_count', 'qqq_trade_count', 'nvda_trade_count', 'gold_trade_count',  # <-- NEU: Counts raus
+
+    # Bollinger Bands: Wir wollen BBP (Prozent), aber NICHT BBM (Mittelwert = Preis) oder BBU/BBL
+    'BBM_20_2.0', 'BBU_20_2.0', 'BBL_20_2.0',  # Pandas TA Namen
+    'BBM_20_2.0_2.0', 'BBU_20_2.0_2.0', 'BBL_20_2.0_2.0',  # Manchmal heißen die so
+
+    # ATR in Dollar (wir wollen atr_pct oder atr_norm)
+    'atr_14',
+    'adx'  # ADX absolut ist okay, aber adx_norm ist sicherer. (Kannst du drin lassen oder rausnehmen)
+]
+
+# Wir filtern nur Spalten, die tatsächlich existieren
+existing_exclude = [c for c in exclude_cols if c in train_df.columns]
+feature_cols = [col for col in train_df.columns if col not in existing_exclude]
+
+print(f"   Ignoriere {len(existing_exclude)} Raw-Features (z.B. {existing_exclude[:3]})...")
+print(f"   Nutze {len(feature_cols)} smarte Features (z.B. {feature_cols[:5]})...")
+
+# Training Data
 X_train = train_df[feature_cols]
 y_train = train_df['target']
+w_train = train_df['sample_weight'] if 'sample_weight' in train_df.columns else None
 
+# Validation Data
 X_val = val_df[feature_cols]
 y_val = val_df['target']
 
+# Test Data
 X_test = test_df[feature_cols]
 y_test = test_df['target']
 
-print(f"   Train: {len(X_train):,} samples × {len(feature_cols)} features")
-print(f"   Val:   {len(X_val):,} samples")
-print(f"   Test:  {len(X_test):,} samples")
+if w_train is not None:
+    print(f"   ✅ Sample Weights aktiv (Min: {w_train.min():.2f}, Max: {w_train.max():.2f})")
 
 # ==============================================================================
-# 2. XGBOOST DATENFORMAT
+# 2. XGBOOST SETUP
 # ==============================================================================
 print("\n[2/5] Erstelle DMatrix...")
 
-dtrain = xgb.DMatrix(X_train, label=y_train, feature_names=feature_cols)
+dtrain = xgb.DMatrix(X_train, label=y_train, feature_names=feature_cols, weight=w_train)
 dval = xgb.DMatrix(X_val, label=y_val, feature_names=feature_cols)
 dtest = xgb.DMatrix(X_test, label=y_test, feature_names=feature_cols)
 
-print("   ✅ DMatrix erstellt")
-
 # ==============================================================================
-# 3. HYPERPARAMETER & TRAINING
+# 3. HYPERPARAMETER (Balance Tuning)
 # ==============================================================================
 print("\n[3/5] Trainiere XGBoost...")
 
-# Class Balance berechnen
 scale_pos_weight = (y_train == 0).sum() / (y_train == 1).sum()
 
 params = {
-    # Objective
     'objective': 'binary:logistic',
     'eval_metric': ['logloss', 'auc', 'error'],
-    
-    # Tree Parameters
-    'max_depth': 6,
-    'eta': 0.1,  # Learning rate
-    'subsample': 0.8,
-    'colsample_bytree': 0.8,
-    
-    # Regularization
-    'lambda': 1.0,  # L2
-    'alpha': 0.1,   # L1
-    
-    # Class Imbalance
+
+    # --- TUNING: Aggressiver als 'Conservative', aber sicherer als 'Default' ---
+    'max_depth': 5,          # Mittelweg (Komplexität vs. Overfitting)
+    'eta': 0.03,             # Lernrate (Fein genug für Finanzdaten)
+
+    'subsample': 0.75,       # 75% der Daten pro Baum
+    'colsample_bytree': 0.75,# 75% der Features pro Baum
+
+    'min_child_weight': 5,   # Blätter müssen halbwegs robust sein
+    'gamma': 0.1,            # Kleiner Schwellenwert für Splits
+
+    'lambda': 3.0,           # L2 Regularisierung (mittelstark)
+    'alpha': 0.5,            # L1 Regularisierung (leicht)
+
     'scale_pos_weight': scale_pos_weight,
-    
-    # Other
     'seed': 42,
-    'tree_method': 'hist',  # Schneller
-    'device': 'cpu'  # Oder 'cuda' wenn GPU verfügbar
+    'n_jobs': -1
 }
 
-print(f"   Hyperparameters:")
-for key, value in params.items():
-    print(f"      {key}: {value}")
-
-# Training mit Early Stopping
+# Training
 evals = [(dtrain, 'train'), (dval, 'val')]
 evals_result = {}
 
 model = xgb.train(
     params,
     dtrain,
-    num_boost_round=1000,
+    num_boost_round=3000,       # Genug Raum für eta 0.03
     evals=evals,
-    early_stopping_rounds=50,
+    early_stopping_rounds=150,  # Stoppt, wenn 150 Runden keine Verbesserung
     evals_result=evals_result,
     verbose_eval=100
 )
 
 print(f"\n   ✅ Training abgeschlossen")
 print(f"   Best iteration: {model.best_iteration}")
-print(f"   Best score: {model.best_score:.4f}")
+print(f"   Best AUC Score (Val): {model.best_score:.4f}")
 
 # ==============================================================================
 # 4. EVALUATION
 # ==============================================================================
 print("\n[4/5] Evaluation...")
 
-def evaluate_xgb_model(model, dmatrix, X, y, dataset_name=""):
-    """Evaluiert das XGBoost-Modell"""
-    
-    y_pred_proba = model.predict(dmatrix)
-    y_pred = (y_pred_proba > 0.5).astype(int)
-    
-    metrics = {
-        'accuracy': accuracy_score(y, y_pred),
-        'precision': precision_score(y, y_pred, zero_division=0),
-        'recall': recall_score(y, y_pred, zero_division=0),
-        'f1': f1_score(y, y_pred, zero_division=0),
-        'roc_auc': roc_auc_score(y, y_pred_proba)
-    }
-    
-    cm = confusion_matrix(y, y_pred)
-    
-    print(f"\n   {dataset_name} Metrics:")
-    print(f"      Accuracy:  {metrics['accuracy']:.4f}")
-    print(f"      Precision: {metrics['precision']:.4f}")
-    print(f"      Recall:    {metrics['recall']:.4f}")
-    print(f"      F1-Score:  {metrics['f1']:.4f}")
-    print(f"      ROC-AUC:   {metrics['roc_auc']:.4f}")
-    
-    print(f"\n   Confusion Matrix:")
-    print(f"      TN: {cm[0,0]:,}  |  FP: {cm[0,1]:,}")
-    print(f"      FN: {cm[1,0]:,}  |  TP: {cm[1,1]:,}")
-    
-    return metrics, cm, y_pred_proba
+def evaluate(model, dmatrix, y_true, name):
+    probs = model.predict(dmatrix)
+    preds = (probs > 0.5).astype(int)
 
-# Train
-train_metrics, train_cm, _ = evaluate_xgb_model(
-    model, dtrain, X_train, y_train, "TRAIN"
-)
+    acc = accuracy_score(y_true, preds)
+    prec = precision_score(y_true, preds, zero_division=0)
+    rec = recall_score(y_true, preds, zero_division=0)
+    auc = roc_auc_score(y_true, probs)
 
-# Validation
-val_metrics, val_cm, _ = evaluate_xgb_model(
-    model, dval, X_val, y_val, "VALIDATION"
-)
+    print(f"   {name} >> Acc: {acc:.2%} | Prec: {prec:.2%} | Rec: {rec:.2%} | AUC: {auc:.4f}")
+    return acc, probs
 
-# Test
-test_metrics, test_cm, test_pred_proba = evaluate_xgb_model(
-    model, dtest, X_test, y_test, "TEST"
-)
+_, _ = evaluate(model, dtrain, y_train, "TRAIN")
+_, _ = evaluate(model, dval, y_val, "VALIDATION")
+test_acc, test_probs = evaluate(model, dtest, y_test, "TEST")
 
 # ==============================================================================
 # 5. FEATURE IMPORTANCE & SPEICHERN
 # ==============================================================================
-print("\n[5/5] Feature Importance & Speichern...")
+print("\n[5/5] Feature Importance...")
 
-# Feature Importance
-importance_dict = model.get_score(importance_type='gain')
-feature_importance = pd.DataFrame([
-    {'feature': k, 'importance': v} 
-    for k, v in importance_dict.items()
-]).sort_values('importance', ascending=False)
+importance = model.get_score(importance_type='gain')
+imp_df = pd.DataFrame(list(importance.items()), columns=['Feature', 'Gain'])
+imp_df = imp_df.sort_values(by='Gain', ascending=False)
 
-print(f"\n   Top 10 wichtigste Features:")
-for idx, row in feature_importance.head(10).iterrows():
-    print(f"      {row['feature']}: {row['importance']:.2f}")
+print("\n🏆 TOP 10 WICHTIGSTE FEATURES (Sollte keine Raw-Preise enthalten):")
+print(imp_df.head(10).to_string(index=False))
 
-# Modell speichern
-model_path = os.path.join(models_dir, "xgboost_model.json")
-model.save_model(model_path)
-print(f"\n   ✅ Modell: {model_path}")
+# Speichern
+model.save_model(os.path.join(models_dir, "xgboost_final.json"))
+imp_df.to_csv(os.path.join(models_dir, "feature_importance.csv"), index=False)
 
-# Metriken speichern
-metrics_dict = {
-    'model_name': 'XGBoost',
-    'best_iteration': int(model.best_iteration),
-    'hyperparameters': params,
-    'train': train_metrics,
-    'validation': val_metrics,
-    'test': test_metrics
-}
-
-metrics_path = os.path.join(models_dir, "xgboost_metrics.json")
-with open(metrics_path, 'w') as f:
-    json.dump(metrics_dict, f, indent=2)
-print(f"   ✅ Metriken: {metrics_path}")
-
-# Feature Importance speichern
-importance_path = os.path.join(models_dir, "xgboost_feature_importance.csv")
-feature_importance.to_csv(importance_path, index=False)
-print(f"   ✅ Feature Importance: {importance_path}")
-
-# Predictions speichern (für Backtesting)
-test_predictions = test_df[['timestamp']].copy()
-test_predictions['target'] = y_test.values
-test_predictions['prediction'] = (test_pred_proba > 0.5).astype(int)
-test_predictions['probability'] = test_pred_proba
-
-pred_path = os.path.join(models_dir, "xgboost_test_predictions.parquet")
-test_predictions.to_parquet(pred_path, index=False)
-print(f"   ✅ Test Predictions: {pred_path}")
-
-# ==============================================================================
-# ZUSAMMENFASSUNG
-# ==============================================================================
-print("\n" + "=" * 70)
-print("XGBOOST MODEL SUMMARY")
-print("=" * 70)
-print(f"Model: XGBoost Classifier")
-print(f"Features: {len(feature_cols)}")
-print(f"Best Iteration: {model.best_iteration}")
-print(f"\nPerformance:")
-print(f"   Train Accuracy:      {train_metrics['accuracy']:.4f}")
-print(f"   Validation Accuracy: {val_metrics['accuracy']:.4f}")
-print(f"   Test Accuracy:       {test_metrics['accuracy']:.4f}")
-print(f"\n   Validation F1-Score: {val_metrics['f1']:.4f}")
-print(f"   Test F1-Score:       {test_metrics['f1']:.4f}")
-print(f"\n   Test ROC-AUC:        {test_metrics['roc_auc']:.4f}")
-
-# Overfitting Check
-if train_metrics['accuracy'] - val_metrics['accuracy'] > 0.05:
-    print(f"\n   ⚠️  Mögliches Overfitting (Train-Val Gap: {train_metrics['accuracy'] - val_metrics['accuracy']:.4f})")
+# Predictions speichern (Nur wenn Timestamp vorhanden)
+if 'timestamp' in test_df.columns:
+    preds_df = test_df[['timestamp']].copy()
+    preds_df['target'] = y_test.values
+    preds_df['prob'] = test_probs
+    preds_df['pred'] = (test_probs > 0.5).astype(int)
+    preds_df.to_parquet(os.path.join(models_dir, "test_predictions.parquet"))
+    print(f"   ✅ Predictions gespeichert mit Timestamps.")
 else:
-    print(f"\n   ✅ Kein starkes Overfitting erkennbar")
+    print("   ⚠️ Warnung: 'timestamp' fehlt im Test-Set. Predictions ohne Zeit gespeichert.")
 
-# Vergleich mit Baseline
-baseline_metrics_path = os.path.join(models_dir, "baseline_metrics.json")
-if os.path.exists(baseline_metrics_path):
-    with open(baseline_metrics_path, 'r') as f:
-        baseline = json.load(f)
-    
-    improvement = test_metrics['accuracy'] - baseline['test']['accuracy']
-    print(f"\n   Vergleich mit Baseline:")
-    print(f"      Baseline Test Accuracy: {baseline['test']['accuracy']:.4f}")
-    print(f"      XGBoost Test Accuracy:  {test_metrics['accuracy']:.4f}")
-    print(f"      Improvement: {improvement:+.4f} ({improvement/baseline['test']['accuracy']*100:+.2f}%)")
-
-print("=" * 70)
+print(f"\n🏁 Fertig! Test Accuracy: {test_acc:.2%}")

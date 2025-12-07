@@ -1,8 +1,9 @@
 """
-06_modeling/01_baseline_model.py
+06_modeling/baseline_model.py
 
 Trainiert ein einfaches Baseline-Modell (Logistische Regression)
-um eine Referenz für komplexere Modelle zu haben.
+um eine Referenz für das XGBoost-Modell zu haben.
+Update: Nutzt dieselbe strenge Feature-Filterung wie XGBoost.
 """
 
 import os
@@ -12,9 +13,8 @@ import numpy as np
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import (
     accuracy_score, precision_score, recall_score, f1_score,
-    confusion_matrix, classification_report, roc_auc_score
+    roc_auc_score, confusion_matrix
 )
-import joblib
 import json
 
 # ==============================================================================
@@ -32,7 +32,7 @@ models_dir = os.path.join(base_data_path, "models")
 os.makedirs(models_dir, exist_ok=True)
 
 print("=" * 70)
-print("BASELINE MODEL: Logistic Regression")
+print("BASELINE MODEL: Logistic Regression (Fair Comparison)")
 print("=" * 70)
 
 # ==============================================================================
@@ -44,12 +44,41 @@ train_df = pd.read_parquet(os.path.join(prep_dir, "train_prepared.parquet"))
 val_df = pd.read_parquet(os.path.join(prep_dir, "val_prepared.parquet"))
 test_df = pd.read_parquet(os.path.join(prep_dir, "test_prepared.parquet"))
 
-# Features und Target trennen
-feature_cols = [col for col in train_df.columns 
-                if col not in ['timestamp', 'target']]
+# --- FEATURE SELECTION (Kopie vom XGBoost Skript) ---
+exclude_cols = [
+    # Metadaten
+    'timestamp', 'target', 'sample_weight', 'future_close', 'year_month',
 
+    # Absolute Preise (Bitcoin)
+    'open', 'high', 'low', 'close', 'volume', 'vwap',
+    'local_high', 'local_low',
+    'sma_50', 'ema_200', 'obv',
+
+    # Absolute Preise (Externe)
+    'qqq_open', 'qqq_high', 'qqq_low', 'qqq_close', 'qqq_volume', 'qqq_vwap', 'qqq_trade_count',
+    'nvda_open', 'nvda_high', 'nvda_low', 'nvda_close', 'nvda_volume', 'nvda_vwap', 'nvda_trade_count',
+    'nq_open', 'nq_high', 'nq_low', 'nq_close', 'nq_volume', 'nq_vwap', 'nq_trade_count',
+    'gld_open', 'gld_high', 'gld_low', 'gld_close', 'gld_volume', 'gld_vwap', 'gld_trade_count',
+    'gold_open', 'gold_high', 'gold_low', 'gold_close', 'gold_volume', 'gold_vwap', 'gold_trade_count',
+    'uup_open', 'uup_high', 'uup_low', 'uup_close', 'uup_volume', 'uup_vwap',
+    'usd_open', 'usd_high', 'usd_low', 'usd_close', 'usd_volume', 'usd_vwap', 'usd_trade_count',
+
+    'rates_open', 'rates_high', 'rates_low', 'rates_close',
+    'm2_close', 'm2_value',
+    'atr_14', 'adx', 'trade_count'
+]
+
+# Filtere Features
+existing_exclude = [c for c in exclude_cols if c in train_df.columns]
+feature_cols = [col for col in train_df.columns if col not in existing_exclude]
+
+print(f"   Ignoriere {len(existing_exclude)} Raw-Features.")
+print(f"   Nutze {len(feature_cols)} smarte Features.")
+
+# Datensätze erstellen
 X_train = train_df[feature_cols]
 y_train = train_df['target']
+w_train = train_df['sample_weight'] if 'sample_weight' in train_df.columns else None
 
 X_val = val_df[feature_cols]
 y_val = val_df['target']
@@ -57,80 +86,47 @@ y_val = val_df['target']
 X_test = test_df[feature_cols]
 y_test = test_df['target']
 
-print(f"   Train: {len(X_train):,} samples × {len(feature_cols)} features")
-print(f"   Val:   {len(X_val):,} samples")
-print(f"   Test:  {len(X_test):,} samples")
-
 # ==============================================================================
-# 2. MODELL TRAINIEREN
+# 2. TRAINING
 # ==============================================================================
-print("\n[2/4] Trainiere Logistic Regression...")
+print("\n[2/4] Trainiere Logistische Regression...")
 
+# Wir nutzen sample_weight auch hier, um fair zu bleiben!
 model = LogisticRegression(
-    max_iter=1000,
     random_state=42,
-    n_jobs=-1,
-    class_weight='balanced'  # Hilft bei Class Imbalance
+    max_iter=1000,
+    class_weight='balanced' # Hilft gegen Klassen-Ungleichgewicht
 )
 
-model.fit(X_train, y_train)
+model.fit(X_train, y_train, sample_weight=w_train)
 
-print("   ✅ Training abgeschlossen")
+print("   ✅ Training abgeschlossen.")
 
 # ==============================================================================
 # 3. EVALUATION
 # ==============================================================================
 print("\n[3/4] Evaluation...")
 
-def evaluate_model(model, X, y, dataset_name=""):
-    """Evaluiert das Modell und gibt Metriken zurück"""
-    
-    y_pred = model.predict(X)
-    y_pred_proba = model.predict_proba(X)[:, 1]
-    
-    metrics = {
-        'accuracy': accuracy_score(y, y_pred),
-        'precision': precision_score(y, y_pred, zero_division=0),
-        'recall': recall_score(y, y_pred, zero_division=0),
-        'f1': f1_score(y, y_pred, zero_division=0),
-        'roc_auc': roc_auc_score(y, y_pred_proba)
-    }
-    
-    cm = confusion_matrix(y, y_pred)
-    
-    print(f"\n   {dataset_name} Metrics:")
-    print(f"      Accuracy:  {metrics['accuracy']:.4f}")
-    print(f"      Precision: {metrics['precision']:.4f}")
-    print(f"      Recall:    {metrics['recall']:.4f}")
-    print(f"      F1-Score:  {metrics['f1']:.4f}")
-    print(f"      ROC-AUC:   {metrics['roc_auc']:.4f}")
-    
-    print(f"\n   Confusion Matrix:")
-    print(f"      TN: {cm[0,0]:,}  |  FP: {cm[0,1]:,}")
-    print(f"      FN: {cm[1,0]:,}  |  TP: {cm[1,1]:,}")
-    
-    return metrics, cm
+def evaluate(model, X, y, name):
+    probs = model.predict_proba(X)[:, 1]
+    preds = model.predict(X)
 
-# Train
-train_metrics, train_cm = evaluate_model(model, X_train, y_train, "TRAIN")
+    acc = accuracy_score(y, preds)
+    f1 = f1_score(y, preds, zero_division=0)
+    auc = roc_auc_score(y, probs)
 
-# Validation
-val_metrics, val_cm = evaluate_model(model, X_val, y_val, "VALIDATION")
+    print(f"   {name} >> Acc: {acc:.2%} | F1: {f1:.4f} | AUC: {auc:.4f}")
+    return {'accuracy': acc, 'f1': f1, 'roc_auc': auc}
 
-# Test
-test_metrics, test_cm = evaluate_model(model, X_test, y_test, "TEST")
+train_metrics = evaluate(model, X_train, y_train, "TRAIN")
+val_metrics = evaluate(model, X_val, y_val, "VALIDATION")
+test_metrics = evaluate(model, X_test, y_test, "TEST")
 
 # ==============================================================================
-# 4. MODELL SPEICHERN
+# 4. SPEICHERN
 # ==============================================================================
-print("\n[4/4] Speichere Modell und Metriken...")
+print("\n[4/4] Speichern...")
 
-# Modell speichern
-model_path = os.path.join(models_dir, "baseline_logistic_regression.pkl")
-joblib.dump(model, model_path)
-print(f"   ✅ Modell: {model_path}")
-
-# Metriken speichern
 metrics_dict = {
     'model_name': 'Logistic Regression (Baseline)',
     'train': train_metrics,
@@ -141,7 +137,6 @@ metrics_dict = {
 metrics_path = os.path.join(models_dir, "baseline_metrics.json")
 with open(metrics_path, 'w') as f:
     json.dump(metrics_dict, f, indent=2)
-print(f"   ✅ Metriken: {metrics_path}")
 
 # Feature Importance (Koeffizienten)
 feature_importance = pd.DataFrame({
@@ -151,31 +146,10 @@ feature_importance = pd.DataFrame({
 
 importance_path = os.path.join(models_dir, "baseline_feature_importance.csv")
 feature_importance.to_csv(importance_path, index=False)
+
+print(f"   ✅ Metriken: {metrics_path}")
 print(f"   ✅ Feature Importance: {importance_path}")
 
-print(f"\n   Top 10 wichtigste Features:")
-for idx, row in feature_importance.head(10).iterrows():
-    print(f"      {row['feature']}: {row['coefficient']:.4f}")
-
-# ==============================================================================
-# ZUSAMMENFASSUNG
-# ==============================================================================
-print("\n" + "=" * 70)
-print("BASELINE MODEL SUMMARY")
-print("=" * 70)
-print(f"Model: Logistic Regression")
-print(f"Features: {len(feature_cols)}")
-print(f"\nPerformance:")
-print(f"   Train Accuracy:      {train_metrics['accuracy']:.4f}")
-print(f"   Validation Accuracy: {val_metrics['accuracy']:.4f}")
-print(f"   Test Accuracy:       {test_metrics['accuracy']:.4f}")
-print(f"\n   Validation F1-Score: {val_metrics['f1']:.4f}")
-print(f"   Test F1-Score:       {test_metrics['f1']:.4f}")
-
-# Overfitting Check
-if train_metrics['accuracy'] - val_metrics['accuracy'] > 0.05:
-    print(f"\n   ⚠️  Mögliches Overfitting (Train-Val Gap: {train_metrics['accuracy'] - val_metrics['accuracy']:.4f})")
-else:
-    print(f"\n   ✅ Kein starkes Overfitting erkennbar")
-
-print("=" * 70)
+print("-" * 70)
+print(f"BASELINE TEST ACCURACY: {test_metrics['accuracy']:.2%}")
+print("-" * 70)

@@ -11,6 +11,7 @@ file_path_M2 = "../../data/external_data/M2.parquet"
 file_path_US_Interest_Rate = "../../data/external_data/US_INTEREST_RATES.parquet"
 file_path_NVDA = "../../data/external_data/NVDA.parquet"
 file_path_nasdaq_future = "../../data/external_data/NASDAQ_FUTURE.parquet"
+file_path_Fear_and_Greed = "../../data/external_data/FEAR_GREED.parquet"
 
 def load_and_display_info(file_path):
     df = pd.read_parquet(file_path)
@@ -33,11 +34,13 @@ def load_and_display_info(file_path):
 if not all(os.path.exists(p) for p in (file_path_BTC, file_path_GLD, file_path_QQQ, file_path_UUP)):
     print(" Datei nicht gefunden! Prüfe den Pfad.")
 else:
-    load_and_display_info(file_path_BTC)
-    load_and_display_info(file_path_GLD)
-    load_and_display_info(file_path_QQQ)
-    load_and_display_info(file_path_UUP)
-    load_and_display_info(file_path_M2)
-    load_and_display_info(file_path_US_Interest_Rate)
-    load_and_display_info(file_path_NVDA)
-    load_and_display_info(file_path_nasdaq_future)
+    #load_and_display_info(file_path_BTC)
+    #load_and_display_info(file_path_GLD)
+    #load_and_display_info(file_path_QQQ)
+    #load_and_display_info(file_path_UUP)
+    #load_and_display_info(file_path_M2)
+    #load_and_display_info(file_path_US_Interest_Rate)
+    #load_and_display_info(file_path_NVDA)
+    #load_and_display_info(file_path_nasdaq_future)
+    load_and_display_info(file_path_Fear_and_Greed)
+

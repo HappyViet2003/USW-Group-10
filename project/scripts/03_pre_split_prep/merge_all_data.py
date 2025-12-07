@@ -43,7 +43,8 @@ external_sources = {
     'UUP.parquet': 'usd',
     'M2.parquet': 'm2',  # Wöchentlich
     'US_INTEREST_RATES.parquet': 'rates',  # Täglich
-    'NVDA.parquet': 'nvda'
+    'NVDA.parquet': 'nvda',
+    'FEAR_GREED.parquet': 'sentiment'
 }
 
 # --- 2. INTELLIGENTES MERGING (Merge AsOf) ---

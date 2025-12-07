@@ -3,9 +3,9 @@
 
 Bereitet die gesplitteten Daten für das Modeling vor:
 1. Data Cleaning (NaN, Inf entfernen)
-2. Feature Selection (Korrelation, Multikollinearität)
-3. Scaling (Optional: StandardScaler)
-4. Final Check (Class Balance, Feature Count)
+2. Feature Selection (Korrelation, Varianz)
+3. Scaling (StandardScaler)
+4. Sicherstellung, dass NUR Zahlen verwendet werden (Text-Filter)
 """
 
 import os
@@ -13,7 +13,8 @@ import yaml
 import pandas as pd
 import numpy as np
 from sklearn.preprocessing import StandardScaler
-import joblib
+from sklearn.feature_selection import VarianceThreshold
+import pickle # Wichtig zum Speichern des Scalers/Selectors
 
 # ==============================================================================
 # KONFIGURATION
@@ -25,12 +26,14 @@ params = yaml.safe_load(open(params_path))
 base_data_path = os.path.join(script_dir, params['DATA_ACQUISITON']['DATA_PATH'])
 split_dir = os.path.join(script_dir, params['DATA_SPLIT']['SPLIT_PATH'])
 
-# Output
+# Output Ordner
 prep_dir = os.path.join(base_data_path, "processed", "prepared")
 os.makedirs(prep_dir, exist_ok=True)
+models_dir = os.path.join(script_dir, "../../models") # Zum Speichern des Scalers
+os.makedirs(models_dir, exist_ok=True)
 
 print("=" * 70)
-print("PREPARATION FOR MODELING")
+print("PREPARATION FOR MODELING (Robust)")
 print("=" * 70)
 
 # ==============================================================================
@@ -38,217 +41,140 @@ print("=" * 70)
 # ==============================================================================
 print("\n[1/5] Lade Train/Val/Test Splits...")
 
-train_df = pd.read_parquet(os.path.join(split_dir, "train.parquet"))
-val_df = pd.read_parquet(os.path.join(split_dir, "validation.parquet"))
-test_df = pd.read_parquet(os.path.join(split_dir, "test.parquet"))
+train_path = os.path.join(split_dir, "train.parquet")
+val_path = os.path.join(split_dir, "validation.parquet")
+test_path = os.path.join(split_dir, "test.parquet")
 
-print(f"   Train: {len(train_df):,} rows")
-print(f"   Val:   {len(val_df):,} rows")
-print(f"   Test:  {len(test_df):,} rows")
+if not os.path.exists(train_path):
+    print("❌ Fehler: Train-Daten fehlen. Führe erst 'split_data.py' aus.")
+    exit(1)
+
+train = pd.read_parquet(train_path)
+val = pd.read_parquet(val_path)
+test = pd.read_parquet(test_path)
+
+print(f"   Train: {len(train):,} rows")
+print(f"   Val:   {len(val):,} rows")
+print(f"   Test:  {len(test):,} rows")
 
 # ==============================================================================
-# 2. DATA CLEANING
+# 2. FEATURE EXTRAKTION & FILTERUNG (BUGFIX)
 # ==============================================================================
-print("\n[2/5] Data Cleaning...")
+print("\n[2/5] Trenne Features & Targets (Filtere Text-Spalten)...")
 
-def clean_data(df, name=""):
-    """Entfernt NaN, Inf und fehlerhafte Zeilen"""
-    
-    initial_rows = len(df)
-    
-    # Inf zu NaN
+# Spalten, die KEINE Features sind
+exclude_cols = ['timestamp', 'target', 'sample_weight', 'future_close', 'year_month']
+
+# Targets sichern
+y_train = train['target']
+y_val = val['target']
+y_test = test['target']
+
+# Weights sichern (falls vorhanden)
+w_train = train['sample_weight'] if 'sample_weight' in train.columns else None
+
+# Features isolieren (DROP)
+X_train_raw = train.drop(columns=exclude_cols, errors='ignore')
+X_val_raw = val.drop(columns=exclude_cols, errors='ignore')
+X_test_raw = test.drop(columns=exclude_cols, errors='ignore')
+
+# --- WICHTIG: NUR NUMERISCHE SPALTEN BEHALTEN ---
+# Das behebt den "Extreme Greed" Fehler
+X_train = X_train_raw.select_dtypes(include=[np.number])
+X_val = X_val_raw.select_dtypes(include=[np.number])
+X_test = X_test_raw.select_dtypes(include=[np.number])
+
+dropped_cols = set(X_train_raw.columns) - set(X_train.columns)
+if dropped_cols:
+    print(f"⚠️  Gefilterte Text-Spalten (werden ignoriert): {dropped_cols}")
+else:
+    print("✅  Alle Spalten sind numerisch.")
+
+# ==============================================================================
+# 3. DATA CLEANING (NaN / Inf)
+# ==============================================================================
+print("\n[3/5] Data Cleaning (NaN/Inf entfernen)...")
+
+def clean_data(df):
+    # Ersetze unendliche Werte mit NaN
     df = df.replace([np.inf, -np.inf], np.nan)
-    
-    # NaN-Statistik
-    nan_counts = df.isna().sum()
-    nan_cols = nan_counts[nan_counts > 0]
-    
-    if len(nan_cols) > 0:
-        print(f"\n   {name} - NaN gefunden:")
-        for col, count in nan_cols.items():
-            print(f"      {col}: {count} ({count/len(df)*100:.2f}%)")
-    
-    # Zeilen mit NaN entfernen
-    df = df.dropna()
-    
-    removed = initial_rows - len(df)
-    if removed > 0:
-        print(f"   {name} - Entfernt: {removed:,} Zeilen ({removed/initial_rows*100:.2f}%)")
-    else:
-        print(f"   {name} - ✅ Keine NaN/Inf gefunden")
-    
+    # Fülle NaNs mit 0 (oder Mittelwert, aber 0 ist sicherer bei Returns)
+    df = df.fillna(0)
     return df
 
-train_df = clean_data(train_df, "Train")
-val_df = clean_data(val_df, "Val")
-test_df = clean_data(test_df, "Test")
+X_train = clean_data(X_train)
+X_val = clean_data(X_val)
+X_test = clean_data(X_test)
+
+print("   ✅ Bereinigung abgeschlossen.")
 
 # ==============================================================================
-# 3. FEATURE SELECTION
+# 4. FEATURE SELECTION (Variance Threshold)
 # ==============================================================================
-print("\n[3/5] Feature Selection...")
+print("\n[4/5] Feature Selection (Entferne konstante Features)...")
+print(f"   Features vor Filter: {X_train.shape[1]}")
 
-# Features und Target trennen
-feature_cols = [col for col in train_df.columns 
-                if col not in ['timestamp', 'target']]
-
-X_train = train_df[feature_cols]
-y_train = train_df['target']
-
-X_val = val_df[feature_cols]
-y_val = val_df['target']
-
-X_test = test_df[feature_cols]
-y_test = test_df['target']
-
-print(f"   Initial Features: {len(feature_cols)}")
-
-# A. Entferne Features mit zu niedriger Varianz
-from sklearn.feature_selection import VarianceThreshold
-
-selector = VarianceThreshold(threshold=0.0001)
+# Entferne Features mit 0 Varianz (konstante Werte)
+selector = VarianceThreshold(threshold=0)
 selector.fit(X_train)
 
-low_var_features = [feature_cols[i] for i, var in enumerate(selector.variances_) 
-                    if var < 0.0001]
+# Wende auf alle Sets an (Wichtig: Transform liefert numpy array, wir wollen DataFrame)
+features_selected = X_train.columns[selector.get_support()]
 
-if len(low_var_features) > 0:
-    print(f"\n   Entferne {len(low_var_features)} Features mit niedriger Varianz:")
-    for feat in low_var_features[:5]:  # Zeige nur erste 5
-        print(f"      - {feat}")
-    if len(low_var_features) > 5:
-        print(f"      ... und {len(low_var_features)-5} weitere")
-    
-    X_train = selector.transform(X_train)
-    X_val = selector.transform(X_val)
-    X_test = selector.transform(X_test)
-    
-    # Feature-Namen aktualisieren
-    feature_cols = [col for col in feature_cols if col not in low_var_features]
-    
-    # Zurück zu DataFrame
-    X_train = pd.DataFrame(X_train, columns=feature_cols)
-    X_val = pd.DataFrame(X_val, columns=feature_cols)
-    X_test = pd.DataFrame(X_test, columns=feature_cols)
+X_train = pd.DataFrame(selector.transform(X_train), columns=features_selected, index=X_train.index)
+X_val = pd.DataFrame(selector.transform(X_val), columns=features_selected, index=X_val.index)
+X_test = pd.DataFrame(selector.transform(X_test), columns=features_selected, index=X_test.index)
 
-print(f"   Features nach Variance Threshold: {len(feature_cols)}")
-
-# B. Entferne hochkorrelierte Features (Multikollinearität)
-print("\n   Prüfe Multikollinearität...")
-
-corr_matrix = X_train.corr().abs()
-upper_triangle = corr_matrix.where(
-    np.triu(np.ones(corr_matrix.shape), k=1).astype(bool)
-)
-
-# Features mit Korrelation > 0.95
-high_corr_features = [column for column in upper_triangle.columns 
-                      if any(upper_triangle[column] > 0.95)]
-
-if len(high_corr_features) > 0:
-    print(f"   Entferne {len(high_corr_features)} hochkorrelierte Features (>0.95):")
-    for feat in high_corr_features[:5]:
-        print(f"      - {feat}")
-    if len(high_corr_features) > 5:
-        print(f"      ... und {len(high_corr_features)-5} weitere")
-    
-    X_train = X_train.drop(columns=high_corr_features)
-    X_val = X_val.drop(columns=high_corr_features)
-    X_test = X_test.drop(columns=high_corr_features)
-    
-    feature_cols = [col for col in feature_cols if col not in high_corr_features]
-
-print(f"   Final Features: {len(feature_cols)}")
+print(f"   Features nach Filter: {X_train.shape[1]}")
 
 # ==============================================================================
-# 4. SCALING
+# 5. SCALING (StandardScaler)
 # ==============================================================================
-print("\n[4/5] Feature Scaling...")
+print("\n[5/5] Scaling (Z-Score Normalisierung)...")
 
-# StandardScaler (z-score normalization)
 scaler = StandardScaler()
+# Fit nur auf Train!
 scaler.fit(X_train)
 
-X_train_scaled = pd.DataFrame(
-    scaler.transform(X_train),
-    columns=feature_cols,
-    index=X_train.index
-)
+# Transform auf alle
+X_train_scaled = pd.DataFrame(scaler.transform(X_train), columns=X_train.columns, index=X_train.index)
+X_val_scaled = pd.DataFrame(scaler.transform(X_val), columns=X_val.columns, index=X_val.index)
+X_test_scaled = pd.DataFrame(scaler.transform(X_test), columns=X_test.columns, index=X_test.index)
 
-X_val_scaled = pd.DataFrame(
-    scaler.transform(X_val),
-    columns=feature_cols,
-    index=X_val.index
-)
+# Target & Meta-Daten wieder anhängen (fürs Speichern)
+# Wir nutzen assign, um Index-Probleme zu vermeiden
+train_prepared = X_train_scaled.assign(target=y_train)
+val_prepared = X_val_scaled.assign(target=y_val)
+test_prepared = X_test_scaled.assign(target=y_test)
 
-X_test_scaled = pd.DataFrame(
-    scaler.transform(X_test),
-    columns=feature_cols,
-    index=X_test.index
-)
-
-# Scaler speichern für später
-scaler_path = os.path.join(prep_dir, "scaler.pkl")
-joblib.dump(scaler, scaler_path)
-print(f"   ✅ Scaler gespeichert: {scaler_path}")
+if w_train is not None:
+    train_prepared['sample_weight'] = w_train
 
 # ==============================================================================
-# 5. FINAL CHECK & SAVE
+# SPEICHERN
 # ==============================================================================
-print("\n[5/5] Final Check & Save...")
+print("\n💾 Speichere vorbereitete Daten...")
 
-# Class Balance prüfen
-train_balance = y_train.value_counts(normalize=True)
-print(f"\n   Train Class Balance:")
-print(f"      0 (Short): {train_balance[0]:.2%}")
-print(f"      1 (Long):  {train_balance[1]:.2%}")
+train_out = os.path.join(prep_dir, "train_prepared.parquet")
+val_out = os.path.join(prep_dir, "val_prepared.parquet")
+test_out = os.path.join(prep_dir, "test_prepared.parquet")
 
-if train_balance[0] < 0.3 or train_balance[1] < 0.3:
-    print("   ⚠️  WARNUNG: Starkes Class Imbalance!")
-else:
-    print("   ✅ Class Balance OK")
+train_prepared.to_parquet(train_out)
+val_prepared.to_parquet(val_out)
+test_prepared.to_parquet(test_out)
 
-# Timestamps wieder hinzufügen
-X_train_scaled['timestamp'] = train_df['timestamp'].values
-X_val_scaled['timestamp'] = val_df['timestamp'].values
-X_test_scaled['timestamp'] = test_df['timestamp'].values
-
-# Target hinzufügen
-X_train_scaled['target'] = y_train.values
-X_val_scaled['target'] = y_val.values
-X_test_scaled['target'] = y_test.values
-
-# Speichern
-train_path = os.path.join(prep_dir, "train_prepared.parquet")
-val_path = os.path.join(prep_dir, "val_prepared.parquet")
-test_path = os.path.join(prep_dir, "test_prepared.parquet")
-
-X_train_scaled.to_parquet(train_path, index=False)
-X_val_scaled.to_parquet(val_path, index=False)
-X_test_scaled.to_parquet(test_path, index=False)
-
-print(f"\n   ✅ Train: {train_path}")
-print(f"   ✅ Val:   {val_path}")
-print(f"   ✅ Test:  {test_path}")
-
-# Feature-Liste speichern
+# Speichere Feature-Liste (Wichtig für XGBoost später)
 feature_list_path = os.path.join(prep_dir, "feature_list.txt")
 with open(feature_list_path, 'w') as f:
-    f.write('\n'.join(feature_cols))
-print(f"   ✅ Feature List: {feature_list_path}")
+    f.write('\n'.join(features_selected))
 
-# ==============================================================================
-# ZUSAMMENFASSUNG
-# ==============================================================================
-print("\n" + "=" * 70)
-print("SUMMARY")
-print("=" * 70)
-print(f"Final Dataset Sizes:")
-print(f"   Train: {len(X_train_scaled):,} rows × {len(feature_cols)} features")
-print(f"   Val:   {len(X_val_scaled):,} rows × {len(feature_cols)} features")
-print(f"   Test:  {len(X_test_scaled):,} rows × {len(feature_cols)} features")
-print(f"\nClass Balance (Train):")
-print(f"   Short (0): {train_balance[0]:.2%}")
-print(f"   Long (1):  {train_balance[1]:.2%}")
-print(f"\n✅ Preparation completed!")
-print("=" * 70)
+# Speichere Scaler (für Deployment später wichtig)
+scaler_path = os.path.join(models_dir, "scaler.pkl")
+with open(scaler_path, "wb") as f:
+    pickle.dump(scaler, f)
+
+print(f"   ✅ Train: {train_out}")
+print(f"   ✅ Scaler: {scaler_path}")
+print("-" * 70)
+print("FERTIG! Daten sind bereit für das Training (numeric-only).")
+print("-" * 70)

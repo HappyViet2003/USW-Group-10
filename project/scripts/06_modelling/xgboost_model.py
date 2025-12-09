@@ -121,23 +121,24 @@ params = {
     'objective': 'binary:logistic',
     'eval_metric': ['logloss', 'auc', 'error'],
 
-    # --- TUNING: Aggressiver als 'Conservative', aber sicherer als 'Default' ---
-    'max_depth': 5,          # Mittelweg (Komplexität vs. Overfitting)
-    'eta': 0.03,             # Lernrate (Fein genug für Finanzdaten)
+    # --- OPTIMIERT: Weniger Overfitting, bessere Generalisierung ---
+    'max_depth': 3,          # FLACHER (weniger Overfitting)
+    'eta': 0.01,             # LANGSAMER (besseres Lernen)
 
-    'subsample': 0.75,       # 75% der Daten pro Baum
-    'colsample_bytree': 0.75,# 75% der Features pro Baum
+    'subsample': 0.7,        # 70% der Daten pro Baum
+    'colsample_bytree': 0.6, # 60% der Features pro Baum (mehr Diversität)
 
-    'min_child_weight': 5,   # Blätter müssen halbwegs robust sein
-    'gamma': 0.1,            # Kleiner Schwellenwert für Splits
+    'min_child_weight': 10,  # MEHR Samples pro Blatt (robuster)
+    'gamma': 0.2,            # HÖHER (weniger unnötige Splits)
 
-    'lambda': 3.0,           # L2 Regularisierung (mittelstark)
-    'alpha': 0.5,            # L1 Regularisierung (leicht)
+    'lambda': 5.0,           # STÄRKERE L2 Regularisierung
+    'alpha': 1.0,            # STÄRKERE L1 Regularisierung
 
     'scale_pos_weight': scale_pos_weight,
     'seed': 42,
     'n_jobs': -1
 }
+
 
 # Training
 evals = [(dtrain, 'train'), (dval, 'val')]

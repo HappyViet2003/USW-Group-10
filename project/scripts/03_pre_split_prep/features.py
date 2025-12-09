@@ -159,6 +159,52 @@ df['slope_close_norm'] = z_norm(df['slope_close_5'])
 df['slope_sma_norm'] = z_norm(df['slope_sma_50'])
 
 # ------------------------------------------------------------------------------
+# 6B. MOVING AVERAGE CROSSOVER FEATURES
+# ------------------------------------------------------------------------------
+print("   Berechne MA Crossover Features...")
+
+# Berechne verschiedene Moving Averages
+df['ma_7'] = ta.sma(df['close'], length=7)
+df['ma_15'] = ta.sma(df['close'], length=15)
+df['ma_30'] = ta.sma(df['close'], length=30)
+df['ma_60'] = ta.sma(df['close'], length=60)
+df['ma_120'] = ta.sma(df['close'], length=120)
+df['ma_240'] = ta.sma(df['close'], length=240)
+
+# MA Distance (Abstand zwischen schnellem und langsamem MA)
+# Positiv = Bullish (schneller MA über langsamem MA)
+# Negativ = Bearish (schneller MA unter langsamem MA)
+df['ma_distance_7_30'] = (df['ma_7'] - df['ma_30']) / df['close']  # Kurzfristig
+df['ma_distance_15_60'] = (df['ma_15'] - df['ma_60']) / df['close']  # Mittelfristig
+df['ma_distance_60_240'] = (df['ma_60'] - df['ma_240']) / df['close']  # Langfristig
+
+# MA Momentum (Geschwindigkeit der Annäherung)
+# Zeigt, wie schnell sich die MAs annähern (Crossover bald möglich?)
+df['ma_distance_momentum_7_30'] = df['ma_distance_7_30'] - df['ma_distance_7_30'].shift(5)
+df['ma_distance_momentum_15_60'] = df['ma_distance_15_60'] - df['ma_distance_15_60'].shift(5)
+
+# MA Slope (Steigung der MAs)
+# Zeigt die Richtung des Trends
+df['ma_7_slope'] = slope(df['ma_7'], period=5)
+df['ma_30_slope'] = slope(df['ma_30'], period=5)
+df['ma_60_slope'] = slope(df['ma_60'], period=5)
+
+# Crossover Detection (Binary: 1 wenn Golden Cross, -1 wenn Death Cross, 0 sonst)
+# Golden Cross = Schneller MA kreuzt langsamen MA von unten nach oben
+# Death Cross = Schneller MA kreuzt langsamen MA von oben nach unten
+df['ma_7_above_30'] = (df['ma_7'] > df['ma_30']).astype(int)
+df['ma_15_above_60'] = (df['ma_15'] > df['ma_60']).astype(int)
+df['ma_60_above_240'] = (df['ma_60'] > df['ma_240']).astype(int)
+
+# Crossover Signal (1 = gerade gekreuzt von unten, -1 = gerade gekreuzt von oben)
+df['ma_crossover_7_30'] = df['ma_7_above_30'].diff()
+df['ma_crossover_15_60'] = df['ma_15_above_60'].diff()
+
+# Normalisierung der MA Distance Features
+df['ma_distance_7_30_norm'] = z_norm(df['ma_distance_7_30'], window=1440)
+df['ma_distance_15_60_norm'] = z_norm(df['ma_distance_15_60'], window=1440)
+
+# ------------------------------------------------------------------------------
 # 7. MAKRO-FEATURES
 # ------------------------------------------------------------------------------
 print("   Berechne Makro-Korrelationen...")

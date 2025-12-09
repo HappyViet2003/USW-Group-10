@@ -159,32 +159,6 @@ df['slope_close_norm'] = z_norm(df['slope_close_5'])
 df['slope_sma_norm'] = z_norm(df['slope_sma_50'])
 
 # ------------------------------------------------------------------------------
-# 6B. MOVING AVERAGE CROSSOVER FEATURES (REDUCED)
-# ------------------------------------------------------------------------------
-print("   Berechne MA Crossover Features (nur die 3 wichtigsten)...")
-
-# Berechne nur die benötigten Moving Averages
-df['ma_7'] = ta.sma(df['close'], length=7)
-df['ma_30'] = ta.sma(df['close'], length=30)
-
-# Feature 1: MA Distance (normalisiert) - WICHTIGSTES FEATURE
-# Zeigt, ob schneller MA über oder unter langsamem MA ist
-df['ma_distance_7_30'] = (df['ma_7'] - df['ma_30']) / df['close']
-df['ma_distance_7_30_norm'] = z_norm(df['ma_distance_7_30'], window=1440)
-
-# Feature 2: MA Momentum - ZWEITWICHTIGSTES FEATURE
-# Zeigt, wie schnell sich die MAs annähern (Crossover bald möglich?)
-df['ma_distance_momentum_7_30'] = df['ma_distance_7_30'] - df['ma_distance_7_30'].shift(5)
-
-# Feature 3: Crossover Signal - DRITTWICHTIGSTES FEATURE
-# 1 = Golden Cross (gerade gekreuzt von unten), -1 = Death Cross (von oben), 0 = kein Crossover
-df['ma_7_above_30'] = (df['ma_7'] > df['ma_30']).astype(int)
-df['ma_crossover_7_30'] = df['ma_7_above_30'].diff()
-
-# Cleanup: Entferne temporäre Spalten
-df = df.drop(columns=['ma_7', 'ma_30', 'ma_7_above_30'])
-
-# ------------------------------------------------------------------------------
 # 7. MAKRO-FEATURES
 # ------------------------------------------------------------------------------
 print("   Berechne Makro-Korrelationen...")

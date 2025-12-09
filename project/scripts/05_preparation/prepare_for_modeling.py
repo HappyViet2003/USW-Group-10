@@ -96,21 +96,6 @@ X_test = pd.DataFrame(selector.transform(X_test), columns=feat_names, index=X_te
 
 print(f"   Nach Variance Threshold: {X_train.shape[1]} Features")
 
-# Multikollinearität entfernen (Threshold: 0.90)
-print("   Entferne hochkorrelierte Features (Threshold: 0.90)...")
-corr_matrix = X_train.corr().abs()
-upper_triangle = corr_matrix.where(np.triu(np.ones(corr_matrix.shape), k=1).astype(bool))
-
-to_drop = [column for column in upper_triangle.columns if any(upper_triangle[column] > 0.90)]
-
-if to_drop:
-    print(f"   Entferne {len(to_drop)} hochkorrelierte Features: {to_drop[:5]}...")
-    X_train = X_train.drop(columns=to_drop)
-    X_val = X_val.drop(columns=to_drop)
-    X_test = X_test.drop(columns=to_drop)
-
-print(f"   Nach Multikollinearitäts-Filter: {X_train.shape[1]} Features")
-
 # ==============================================================================
 # 4. SCALING
 # ==============================================================================

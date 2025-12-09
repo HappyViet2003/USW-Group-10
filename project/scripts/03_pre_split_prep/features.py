@@ -159,6 +159,98 @@ df['slope_close_norm'] = z_norm(df['slope_close_5'])
 df['slope_sma_norm'] = z_norm(df['slope_sma_50'])
 
 # ------------------------------------------------------------------------------
+# 6B. MACD (MOVING AVERAGE CONVERGENCE DIVERGENCE)
+# ------------------------------------------------------------------------------
+print("   Berechne MACD...")
+# MACD (12, 26, 9) - Standard-Parameter
+macd = ta.macd(df['close'], fast=12, slow=26, signal=9)
+if macd is not None:
+    df['macd'] = macd['MACD_12_26_9']
+    df['macd_signal'] = macd['MACDs_12_26_9']
+    df['macd_histogram'] = macd['MACDh_12_26_9']
+    
+    # Normalisierung (wichtig für ML!)
+    df['macd_histogram_norm'] = z_norm(df['macd_histogram'])
+    df['macd_norm'] = z_norm(df['macd'])
+    
+    # MACD Crossover Signal (Histogram wechselt Vorzeichen)
+    df['macd_crossover'] = np.sign(df['macd_histogram']).diff()
+
+# ------------------------------------------------------------------------------
+# 6C. ICHIMOKU CLOUD
+# ------------------------------------------------------------------------------
+print("   Berechne Ichimoku Cloud...")
+# Ichimoku (9, 26, 52) - Standard-Parameter
+ichimoku = ta.ichimoku(df['high'], df['low'], df['close'])
+if ichimoku is not None and len(ichimoku[0].columns) > 0:
+    ich = ichimoku[0]
+    
+    # Tenkan-sen (Conversion Line) & Kijun-sen (Base Line)
+    if 'ITS_9' in ich.columns:
+        df['tenkan'] = ich['ITS_9']
+    if 'IKS_26' in ich.columns:
+        df['kijun'] = ich['IKS_26']
+    
+    # Senkou Span A & B (Cloud)
+    if 'ISA_9' in ich.columns:
+        df['senkou_a'] = ich['ISA_9']
+    if 'ISB_26' in ich.columns:
+        df['senkou_b'] = ich['ISB_26']
+    
+    # Distance zu Cloud (WICHTIGSTES SIGNAL!)
+    if 'senkou_a' in df.columns and 'senkou_b' in df.columns:
+        df['cloud_top'] = df[['senkou_a', 'senkou_b']].max(axis=1)
+        df['cloud_bottom'] = df[['senkou_a', 'senkou_b']].min(axis=1)
+        
+        # Über Cloud = bullish, unter Cloud = bearish, in Cloud = neutral
+        df['dist_cloud'] = np.where(
+            df['close'] > df['cloud_top'],
+            (df['close'] - df['cloud_top']) / df['close'],  # Über Cloud (bullish)
+            np.where(
+                df['close'] < df['cloud_bottom'],
+                (df['close'] - df['cloud_bottom']) / df['close'],  # Unter Cloud (bearish)
+                0  # In der Cloud (neutral)
+            )
+        )
+        df['dist_cloud_norm'] = z_norm(df['dist_cloud'])
+        
+        # Cloud Thickness (Dicke der Cloud = Trendstärke)
+        df['cloud_thickness'] = (df['cloud_top'] - df['cloud_bottom']) / df['close']
+        df['cloud_thickness_norm'] = z_norm(df['cloud_thickness'])
+    
+    # Tenkan/Kijun Cross (TK Cross = wichtiges Signal)
+    if 'tenkan' in df.columns and 'kijun' in df.columns:
+        df['tk_cross'] = (df['tenkan'] - df['kijun']) / df['close']
+        df['tk_cross_norm'] = z_norm(df['tk_cross'])
+    
+    # Cleanup: Entferne temporäre Spalten
+    df = df.drop(columns=['tenkan', 'kijun', 'senkou_a', 'senkou_b', 'cloud_top', 'cloud_bottom'], errors='ignore')
+
+# ------------------------------------------------------------------------------
+# 6D. VOLUME SPIKE DETECTION
+# ------------------------------------------------------------------------------
+print("   Berechne Volume Spike Features...")
+
+# Volume Moving Average (20 Perioden)
+df['volume_ma_20'] = df['volume'].rolling(20).mean()
+
+# Volume Spike Ratio (aktuelles Volumen / Durchschnitt)
+df['volume_spike'] = df['volume'] / (df['volume_ma_20'] + 1e-8)
+df['volume_spike_norm'] = z_norm(df['volume_spike'])
+
+# Volume-Weighted Momentum (Return * Volume Spike)
+# Zeigt, ob große Bewegungen mit hohem Volumen passieren (wichtig!)
+df['volume_momentum'] = df['log_ret'] * df['volume_spike']
+df['volume_momentum_norm'] = z_norm(df['volume_momentum'])
+
+# Volume Trend (steigt oder fällt das Volumen?)
+df['volume_trend'] = slope(df['volume'], period=5)
+df['volume_trend_norm'] = z_norm(df['volume_trend'])
+
+# Cleanup: Entferne temporäre Spalte
+df = df.drop(columns=['volume_ma_20'], errors='ignore')
+
+# ------------------------------------------------------------------------------
 # 7. MAKRO-FEATURES
 # ------------------------------------------------------------------------------
 print("   Berechne Makro-Korrelationen...")
@@ -263,5 +355,5 @@ print(f"\n💾 Speichere finalen Datensatz: {output_file}")
 df.to_parquet(output_file, index=False)
 
 print("-" * 50)
-print(f"FERTIG! Enhanced Features + Sentiment + Bugfix aktiv.")
+print(f"FERTIG! Enhanced Features + MACD + Ichimoku + Volume Spikes aktiv.")
 print("-" * 50)

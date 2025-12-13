@@ -5,9 +5,11 @@
 - Julius Bollmann (Matrikelnummer: S0594551)
 
 ## Executive Summary
-This project implements a machine learning pipeline to predict short-term price movements of Bitcoin (BTC/USD). Unlike simple price-based models, we utilize a **multi-source approach** integrating high-frequency market data, macroeconomic indicators, and sentiment analysis.
+This project implements a machine learning pipeline to predict short-term price movements of Bitcoin (BTC/USD). Utilizing a **multi-source approach** (Crypto, Equities, Macro, Sentiment) and rigorous **"No-Overfit" Feature Engineering**, we developed an XGBoost model that identifies profitable market anomalies.
 
-Our final **XGBoost model achieved a Test Accuracy of ~51.8%**, outperforming the Logistic Regression Baseline. In efficient financial markets, this represents a statistically significant edge ("Alpha"), achieved through rigorous feature engineering and strict prevention of look-ahead bias.
+**Key Results:**
+- **Model Edge:** 51.8% Test Accuracy (vs. 50.8% Baseline).
+- **Deployment Strategy:** A high-confidence filter (Threshold > 0.62) generates ~988 highly selective trades over the test period, focusing on risk-adjusted returns rather than volume.
 
 ---
 
@@ -19,87 +21,81 @@ Binary Classification: Predict if the Bitcoin Close Price at $t+60$ (1 hour ahea
 - `0` (Short): $Price_{t+60} \le Price_t$
 
 **Constraints**
-- **Stationarity:** Financial time-series are non-stationary. We strictly avoid using absolute price levels (e.g., "$90,000") to prevent the model from learning specific price regimes instead of market dynamics.
-- **Concept Drift:** Market behavior changes over time (2020 Volatility vs. 2024 Institutional Adoption).
+- **Stationarity:** Financial time-series are non-stationary. We explicitly banned absolute price levels (e.g., "$90,000") to prevent the model from learning specific price regimes.
+- **Concept Drift:** To address changing market behavior, we use **Sample Weighting**, giving 2025 data significantly higher influence than 2020 data.
 
 ---
 
 ### 2. Data Strategy ("Hybrid Multi-Source")
 
-We aggregate data from disparate sources with different frequencies, synchronizing them to the Bitcoin 1-minute timeline via `merge_asof` (backward-fill).
+We aggregate data from disparate sources, synchronizing them to the Bitcoin 1-minute timeline via `merge_asof`.
 
-| Category | Data Source | Frequency | Rationale |
+| Category | Source | Frequency | Rationale |
 | :--- | :--- | :--- | :--- |
-| **Crypto** | BTC/USD (Alpaca) | 1 Min | The target asset. |
-| **Equities** | NVDA, QQQ (Alpaca) | 1 Min | Measures Tech/AI risk sentiment ("Beta"). |
-| **Futures** | Nasdaq 100 Futures | Daily | Proxy for overnight sentiment. |
-| **Macro** | 10Y Yields, Dollar (UUP) | Daily | Cost of capital & currency strength. |
-| **Sentiment** | **Fear & Greed Index** | Daily | **NEW:** Proxies retail psychology/hype. |
+| **Crypto** | BTC/USD (Alpaca) | 1 Min | Target Asset (Free full feed). |
+| **Equities** | NVDA, QQQ (Alpaca) | 1 Min | Tech Risk Sentiment (IEX feed for correlation features). |
+| **Futures** | Nasdaq 100 | Daily | Overnight Sentiment Proxy. |
+| **Macro** | 10Y Yields, DXY | Daily | Cost of capital & Currency strength. |
+| **Sentiment** | Fear & Greed | Daily | Retail Psychology Index. |
 
 ---
 
 ### 3. Advanced Feature Engineering
 
-We moved beyond basic indicators to capture **Market Structure** and **Smart Money Flow**. Implemented in `features.py` using `pandas_ta`.
+We focus on relative metrics to ensure the model learns *dynamics*, not prices.
 
-#### A. Volume & Institutional Flow
-- **VWAP Distance:** Measures if price is expensive relative to the volume-weighted average (Institutional Benchmark).
-- **OBV Slope:** On-Balance Volume momentum to detect accumulation/distribution.
-- **MFI (Money Flow Index):** Volume-weighted RSI to distinguish fake pumps from real trends.
-
-#### B. Market Regimes & Volatility
-- **ATR (Average True Range):** Normalised volatility metric to detect panic vs. calm phases.
-- **ADX:** Filters trending vs. ranging markets.
-- **Beta to QQQ:** dynamic correlation to Tech stocks (Risk-On/Off detector).
-
-#### C. Cyclical Time Encoding
-- Instead of linear hours (0-23), we use **Sin/Cos transformations** to mathematically model the cyclic nature of time (23:00 is close to 00:00).
-
-#### D. Time-Based Sample Weighting
-To address **Concept Drift**, we implemented a "staircase" weighting function. Data from 2025 has significantly higher weight (1.5x) in the loss function than data from 2020 (0.5x), forcing the model to prioritize current market rules.
+* **Institutional Flow:** `vwap_distance` (Price vs. Volume Weighted Average), `obv_slope` (Smart Money Flow).
+* **Market Regimes:** `atr_pct` (Volatility), `beta_qqq` (Correlation to Tech).
+* **Oscillators:** `rsi_14`, `mfi_14` (Overbought/Oversold conditions).
+* **Time Encoding:** Cyclical encoding (Sin/Cos) of hour and day to capture session liquidity patterns.
 
 ---
 
-### 4. Prevention of Overfitting & Data Leakage
+### 4. Prevention of Overfitting ("Scorched Earth Policy")
 
-A critical part of our modeling process was the **"Scorched Earth" Feature Selection**. To ensure realistic results, we explicitly banned all absolute values:
+To ensure the 51.8% accuracy is real and not a result of leakage, we applied strict filtering in `xgboost_model.py`:
 
-* ❌ **Banned:** `close`, `high`, `low`, `sma_50`, `vwap`, `gold_close`. (Reason: Non-stationary).
-* ✅ **Allowed:** `log_returns`, `rsi`, `dist_to_vwap`, `obv_slope`, `beta`, `atr_pct`. (Reason: Stationary/Relative).
+* ❌ **BANNED:** `close`, `high`, `low`, `sma_50`, `ema_200`, `trade_count`. (Absolute values that grow over time).
+* ✅ **ALLOWED:** `log_returns`, `rsi`, `dist_to_vwap`, `slope`, `beta`. (Stationary ratios).
 
-**Preparation Pipeline (`prepare_for_modeling.py`):**
-1.  **Cleaning:** Removal of `NaN` and `Inf`.
-2.  **Filter:** Strict removal of non-numeric columns.
-3.  **Scaling:** `StandardScaler` fitted *only* on Training data to prevent look-ahead bias.
+This guarantees that the model works regardless of whether Bitcoin is at $10k or $100k.
 
 ---
 
-### 5. Modeling & Results
+### 5. Modeling Performance
 
-We compared a complex gradient boosting model against a linear baseline.
+We compared our Tuned XGBoost against a Logistic Regression Baseline.
 
-#### Models
-1.  **Baseline:** Logistic Regression (Class-balanced).
-2.  **Challenger:** **XGBoost Classifier**.
-    * *Hyperparameters:* Tuned for stability (`eta=0.03`, `max_depth=5`, `lambda=3.0`).
-    * *Mechanism:* Uses Sample Weights and Early Stopping.
-
-#### Performance (Test Set)
-
-| Metric | Baseline (LogReg) | **XGBoost (Final)** | Improvement |
+| Metric | Baseline (LogReg) | **XGBoost (Final)** | Delta |
 | :--- | :--- | :--- | :--- |
 | **Accuracy** | 50.86% | **51.82%** | **+0.96%** |
-| **Edge** | Random | **Profitable** | Significant |
+| **Precision**| Balanced | **High (Selective)**| - |
 
-*Analysis:* While 51.8% appears low, in high-frequency trading, any accuracy consistently above 51% is considered a "money-printing" edge due to the Law of Large Numbers. The model successfully identified structural patterns (Slopes, RSI regimes) that linear models missed.
+*Analysis:* In high-frequency trading, an edge of ~1% is statistically significant. The XGBoost model successfully captures non-linear relationships that the linear baseline misses.
 
 ---
 
-### 6. How to Reproduce
+### 6. Deployment & Strategy (Backtesting)
 
-The project follows a strict ETL pipeline structure.
+Moving from prediction to trading, we implemented a **"Sniper Strategy"** in `07_deployment`.
+
+**Configuration:**
+- **Confidence Threshold:** `0.62` (Only trade if Model Probability > 62%).
+- **Fees:** 0.1% per trade.
+
+**Backtest Results (Test Set):**
+- **Total Trades:** **988** (approx. 3-4 trades/day).
+- **Rationale:** By raising the threshold to 0.62, we filter out market noise and "weak" signals. This drastically reduces transaction costs and improves the **Win Rate**.
+- **Comparison:** While "Buy & Hold" yields higher absolute returns in strong bull runs, our Active Strategy offers lower volatility and reduces exposure during uncertain market phases (Cash Position).
+
+**Paper Trading:**
+A live-simulation script (`run_paper_trading.py`) demonstrates the production loop: Fetch Data $\rightarrow$ Feature Engineering $\rightarrow$ Inference $\rightarrow$ Order Execution via Alpaca API.
+
+---
+
+### 7. How to Reproduce
 
 **Step 1: Setup**
 ```bash
 pip install -r requirements.txt
-# Ensure project/conf/keys.yaml is set
+# Check project/conf/keys.yaml

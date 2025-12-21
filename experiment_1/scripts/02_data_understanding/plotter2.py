@@ -135,4 +135,4 @@ if __name__ == "__main__":
     plot_subplots(data)
     plot_correlation_matrix(data)
 
-    print("\nFertig! Prüfe den Ordner 'project/images'.")
+    print("\nFertig! Prüfe den Ordner 'experiment_1/images'.")

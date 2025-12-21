@@ -291,29 +291,29 @@ FRED_API_KEY: "your_fred_key"
 **Step 3: Run Pipeline**
 ```bash
 # 1. Data Acquisition (Alpaca, FRED, Yahoo Finance)
-python project/scripts/01_data_acquisition/fetch_btc_data.py
-python project/scripts/01_data_acquisition/fetch_external_data.py
+python experiment_1/scripts/01_data_acquisition/fetch_btc_data.py
+python experiment_1/scripts/01_data_acquisition/fetch_external_data.py
 
 # 2. Data Understanding (EDA plots)
-python project/scripts/02_data_understanding/plot_correlations.py
+python experiment_1/scripts/02_data_understanding/plot_correlations.py
 
 # 3. Feature Engineering
-python project/scripts/03_pre_split_prep/features.py
+python experiment_1/scripts/03_pre_split_prep/features.py
 
 # 4. Train/Val/Test Split
-python project/scripts/04_split_data/split_data.py
+python experiment_1/scripts/04_split_data/split_data.py
 
 # 5. Data Preparation (Scaling, Feature Selection)
-python project/scripts/05_preparation/prepare_for_modeling.py
+python experiment_1/scripts/05_preparation/prepare_for_modeling.py
 
 # 6. Model Training
-python project/scripts/06_modelling/xgboost_model.py
+python experiment_1/scripts/06_modelling/xgboost_model.py
 
 # 7. Backtesting
-python project/scripts/07_deployment/01_backtesting/run_backtest.py
+python experiment_1/scripts/07_deployment/01_backtesting/run_backtest.py
 
 # 8. Paper Trading (Simulation)
-python project/scripts/07_deployment/02_paper_trading/run_paper_trading.py
+python experiment_1/scripts/07_deployment/02_paper_trading/run_paper_trading.py
 ```
 
 **Step 4: View Results**

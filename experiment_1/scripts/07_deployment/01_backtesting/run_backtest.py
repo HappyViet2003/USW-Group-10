@@ -21,7 +21,7 @@ from datetime import datetime
 # KONFIGURATION
 # ==============================================================================
 script_dir = os.path.dirname(os.path.abspath(__file__))
-# Wir müssen 3 Ebenen hoch: 01_backtesting -> 07_deployment -> scripts -> project
+# Wir müssen 3 Ebenen hoch: 01_backtesting -> 07_deployment -> scripts -> experiment_1
 params_path = os.path.join(script_dir, "../../../conf/params.yaml")
 params = yaml.safe_load(open(params_path))
 

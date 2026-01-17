@@ -13,3 +13,4 @@ yfinance
 pandas_ta
 numpy
 xgboost
+tensorflow

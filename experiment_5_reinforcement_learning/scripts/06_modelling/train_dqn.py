@@ -124,7 +124,7 @@ print("⚠️  Überwache mit TensorBoard:")
 print(f"    tensorboard --logdir {os.path.join(models_dir, 'tensorboard')}")
 print("=" * 70)
 
-TOTAL_TIMESTEPS = 500000
+TOTAL_TIMESTEPS = 200000
 
 model.learn(
     total_timesteps=TOTAL_TIMESTEPS,

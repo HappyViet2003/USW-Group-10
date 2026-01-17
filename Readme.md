@@ -8,3 +8,4 @@
 # Experiments
 - [Exp_1.md](experiment_1/README.md)
 - [Exp_2.md](experiment_2_onchain/ITERATION_2_SUMMARY.md)
+- [Exp_3.md](experiment_3_lstm/ITERATION_3_SUMMARY.md)

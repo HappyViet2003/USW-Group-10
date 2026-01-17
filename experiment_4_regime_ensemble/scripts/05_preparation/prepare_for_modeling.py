@@ -1,8 +1,9 @@
 """
 05_preparation/prepare_for_modeling.py
 
-Bereitet die gesplitteten Daten für das Modeling vor.
-FIX: Behält 'timestamp' bei, damit XGBoost die Predictions zuordnen kann.
+FIXED VERSION:
+- Behält regime_bull, regime_bear, regime_sideways bei!
+- Behält timestamp bei
 """
 
 import os
@@ -30,7 +31,7 @@ models_dir = os.path.join(script_dir, "../../models")
 os.makedirs(models_dir, exist_ok=True)
 
 print("=" * 70)
-print("PREPARATION FOR MODELING (Timestamp Fix)")
+print("PREPARATION FOR MODELING (FIXED - Keep Regime Columns)")
 print("=" * 70)
 
 # ==============================================================================
@@ -52,6 +53,9 @@ print("\n[2/5] Trenne Features & Targets...")
 # Meta-Daten sichern (werden nicht trainiert, aber später gebraucht)
 meta_cols = ['timestamp', 'target', 'sample_weight', 'future_close', 'year_month']
 
+# WICHTIG: Regime-Spalten sichern (werden NICHT skaliert!)
+regime_cols = ['regime_bull', 'regime_bear', 'regime_sideways']
+
 # Targets
 y_train = train['target']
 y_val = val['target']
@@ -60,10 +64,16 @@ y_test = test['target']
 # Weights
 w_train = train['sample_weight'] if 'sample_weight' in train.columns else None
 
-# Features: Alles außer Meta-Daten
-X_train_raw = train.drop(columns=meta_cols, errors='ignore')
-X_val_raw = val.drop(columns=meta_cols, errors='ignore')
-X_test_raw = test.drop(columns=meta_cols, errors='ignore')
+# Regime-Spalten sichern
+regime_train = train[regime_cols] if all(c in train.columns for c in regime_cols) else None
+regime_val = val[regime_cols] if all(c in val.columns for c in regime_cols) else None
+regime_test = test[regime_cols] if all(c in test.columns for c in regime_cols) else None
+
+# Features: Alles außer Meta-Daten UND Regime-Spalten
+exclude_cols = meta_cols + regime_cols
+X_train_raw = train.drop(columns=exclude_cols, errors='ignore')
+X_val_raw = val.drop(columns=exclude_cols, errors='ignore')
+X_test_raw = test.drop(columns=exclude_cols, errors='ignore')
 
 # NUR ZAHLEN (Filtert Text wie "Extreme Greed" raus)
 X_train = X_train_raw.select_dtypes(include=[np.number])
@@ -71,6 +81,7 @@ X_val = X_val_raw.select_dtypes(include=[np.number])
 X_test = X_test_raw.select_dtypes(include=[np.number])
 
 print(f"   Numerische Features: {X_train.shape[1]}")
+print(f"   Regime Columns: {regime_cols if regime_train is not None else 'None'}")
 
 # ==============================================================================
 # 3. DATA CLEANING & SELECTION
@@ -111,12 +122,19 @@ X_test_scaled = pd.DataFrame(scaler.transform(X_test), columns=X_test.columns, i
 # ==============================================================================
 # 5. ZUSAMMENFÜGEN & SPEICHERN
 # ==============================================================================
-print("\n[5/5] Speichern (mit Timestamp)...")
+print("\n[5/5] Speichern (mit Timestamp & Regime Columns)...")
 
-# Wir hängen Target UND Timestamp wieder an
+# Wir hängen Target, Timestamp UND Regime-Spalten wieder an!
 train_prepared = X_train_scaled.assign(target=y_train, timestamp=train['timestamp'])
 val_prepared = X_val_scaled.assign(target=y_val, timestamp=val['timestamp'])
 test_prepared = X_test_scaled.assign(target=y_test, timestamp=test['timestamp'])
+
+# Regime-Spalten anhängen (WICHTIG!)
+if regime_train is not None:
+    train_prepared = train_prepared.assign(**regime_train)
+    val_prepared = val_prepared.assign(**regime_val)
+    test_prepared = test_prepared.assign(**regime_test)
+    print(f"   ✅ Regime columns added: {regime_cols}")
 
 if w_train is not None:
     train_prepared['sample_weight'] = w_train
@@ -129,4 +147,7 @@ test_prepared.to_parquet(os.path.join(prep_dir, "test_prepared.parquet"))
 with open(os.path.join(models_dir, "scaler.pkl"), "wb") as f:
     pickle.dump(scaler, f)
 
-print(f"✅ Fertig! Daten gespeichert in: {prep_dir}")
+print(f"\n✅ Fertig! Daten gespeichert in: {prep_dir}")
+print(f"   Train: {train_prepared.shape}")
+print(f"   Val: {val_prepared.shape}")
+print(f"   Test: {test_prepared.shape}")

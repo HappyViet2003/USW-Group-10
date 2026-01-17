@@ -37,7 +37,8 @@ val_df = pd.read_parquet(os.path.join(prep_dir, "val_prepared.parquet"))
 test_df = pd.read_parquet(os.path.join(prep_dir, "test_prepared.parquet"))
 
 # Features und Target trennen
-exclude_cols = ['timestamp', 'target', 'sample_weight', 'regime']  # Regime nicht als Feature
+exclude_cols = ['timestamp', 'target', 'sample_weight', 'regime',
+                'regime_bull', 'regime_bear', 'regime_sideways']
 feature_cols = [c for c in train_df.columns if c not in exclude_cols]
 
 X_train = train_df[feature_cols]

@@ -1,9 +1,12 @@
 """
 07_deployment/01_backtesting/run_backtest.py
 
-FINAL VERSION:
+COMPLETE PRICE FIX VERSION:
 - Fixed "Always Long" Bug
 - Fixed Feature Selection
+- Fixed regime column reconstruction
+- Fixed Buy & Hold calculation (use original prices!)
+- Fixed Backtest simulation (use original prices!)
 - Disabled Plots (wegen Errors)
 - Added Debug Output
 """
@@ -27,25 +30,36 @@ model_dir = os.path.join(script_dir, "../../../data/models")
 INITIAL_CAPITAL = 10000.0
 FEE_RATE = 0.001  # 0.1% per trade
 
-# FIXED: Realistic Adaptive Thresholds
-THRESHOLD_BULL = 0.55  # Lower threshold (more trades)
-THRESHOLD_BEAR = 0.50  # Middle threshold
-THRESHOLD_SIDEWAYS = 0.55  # Moderate threshold
+# NOCH STRENGER:
+THRESHOLD_BULL = 0.65      # Sehr hoch
+THRESHOLD_BEAR = 0.40      # Sehr niedrig
+THRESHOLD_SIDEWAYS = 0.65  # Sehr hoch
 
 print("=" * 70)
-print("ADAPTIVE BACKTEST (FINAL VERSION)")
+print("ADAPTIVE BACKTEST (COMPLETE PRICE FIX VERSION)")
 print("=" * 70)
 
 # 1. Load Data & Model
 print("\n[1/4] Lade Daten und Modell...")
 
-df = pd.read_parquet(os.path.join(processed_dir, "training_data.parquet"))
+# Lade prepared Daten (für Features & Predictions)
+df = pd.read_parquet(os.path.join(processed_dir, "prepared/test_prepared.parquet"))
 df = df.sort_values('timestamp')
 
 # Filter: 2024 Test Set
 df = df[df['timestamp'] >= '2024-01-01']
+
+# WICHTIG: Lade ORIGINAL Daten (für echte Preise!)
+df_original = pd.read_parquet(os.path.join(processed_dir, "training_data.parquet"))
+df_original = df_original[df_original['timestamp'] >= '2024-01-01']
+df_original = df_original.sort_values('timestamp')
+
+# Merge: Füge originale Preise hinzu
+df['close_original'] = df_original['close'].values
+
 print(f"   Test Period: {df['timestamp'].min()} to {df['timestamp'].max()}")
 print(f"   Test Samples: {len(df)}")
+print(f"   Price Range: ${df['close_original'].min():,.2f} - ${df['close_original'].max():,.2f}")
 
 # Load Model
 model_path = os.path.join(model_dir, "ensemble_model.pkl")
@@ -60,16 +74,40 @@ print(f"   ✅ Model loaded: {model_path}")
 print("\n[2/4] Generiere Predictions...")
 
 # FIXED: Don't exclude 'open', 'high', 'low', 'close', 'volume'
+# But exclude regime columns AND close_original!
 feature_cols = [col for col in df.columns if col not in [
-    'timestamp', 'target', 'future_close', 'regime', 'sample_weight'
+    'timestamp', 'target', 'sample_weight',
+    'regime_bull', 'regime_bear', 'regime_sideways',
+    'close_original'  # ← Exclude original price!
 ]]
 
 X = df[feature_cols]
 df['pred_proba'] = model.predict_proba(X)[:, 1]
 
+
+# WICHTIG: Rekonstruiere 'regime' Spalte RICHTIG!
+def get_regime(row):
+    # Check welche Regime-Spalte = 1 ist
+    if row.get('regime_bear', 0) == 1:
+        return 'bear'
+    elif row.get('regime_sideways', 0) == 1:
+        return 'sideways'
+    elif row.get('regime_bull', 0) == 1:
+        return 'bull'
+    else:
+        # Fallback: Wenn alle 0 sind (sollte nicht passieren!)
+        return 'sideways'
+
+
+df['regime'] = df.apply(get_regime, axis=1)
+
 print(f"   ✅ Predictions generated for {len(df)} samples")
 print(
     f"   Prediction Stats: min={df['pred_proba'].min():.3f}, max={df['pred_proba'].max():.3f}, mean={df['pred_proba'].mean():.3f}")
+
+# Debug: Check Regime Distribution
+print(f"\n   Regime Distribution:")
+print(df['regime'].value_counts())
 
 # 3. FIXED: Adaptive Strategy (Realistic)
 print("\n[3/4] Führe Adaptive Backtest durch...")
@@ -122,14 +160,14 @@ for regime in ['bull', 'bear', 'sideways']:
         print(
             f"                Pred Proba: min={regime_df['pred_proba'].min():.3f}, max={regime_df['pred_proba'].max():.3f}, mean={regime_df['pred_proba'].mean():.3f}")
 
-# Backtest Simulation
+# Backtest Simulation (USE ORIGINAL PRICES!)
 capital = INITIAL_CAPITAL
 position = 0
 entry_price = 0
 trades = []
 
 for idx, row in df.iterrows():
-    current_price = row['close']
+    current_price = row['close_original']  # ← USE ORIGINAL PRICE!
     signal = row['signal']
 
     # Close existing position if signal changes
@@ -164,7 +202,7 @@ for idx, row in df.iterrows():
 
 # Close final position
 if position != 0:
-    exit_price = df.iloc[-1]['close']
+    exit_price = df.iloc[-1]['close_original']  # ← USE ORIGINAL PRICE!
     pnl_pct = (exit_price / entry_price - 1) * position
     fee = FEE_RATE * 2
     net_pnl = pnl_pct - fee
@@ -180,11 +218,11 @@ num_trades = len(trades_df) // 2  # Entry + Exit = 1 Trade
 winning_trades = trades_df[trades_df['net_pnl'] > 0]
 win_rate = len(winning_trades) / num_trades * 100 if num_trades > 0 else 0
 
-# Buy & Hold Comparison
-buy_hold_return = (df.iloc[-1]['close'] / df.iloc[0]['close'] - 1) * 100
+# Buy & Hold Comparison (USE ORIGINAL PRICES!)
+buy_hold_return = (df.iloc[-1]['close_original'] / df.iloc[0]['close_original'] - 1) * 100
 
 print("\n" + "=" * 70)
-print("ADAPTIVE BACKTEST RESULTS (FINAL VERSION)")
+print("ADAPTIVE BACKTEST RESULTS (COMPLETE PRICE FIX VERSION)")
 print("=" * 70)
 print(f"Initial Capital:    ${INITIAL_CAPITAL:,.2f}")
 print(f"Final Capital:      ${capital:,.2f}")
@@ -210,11 +248,7 @@ for regime in ['bull', 'bear', 'sideways']:
 print("\nSignal Distribution:")
 print(df['signal'].value_counts())
 
-# Regime Distribution
-print("\nRegime Distribution:")
-print(df['regime'].value_counts())
-
 print("\n" + "=" * 70)
-print("BACKTEST COMPLETE (FINAL VERSION)")
+print("BACKTEST COMPLETE (COMPLETE PRICE FIX VERSION)")
 print("Plots deaktiviert (wegen matplotlib errors)")
 print("=" * 70)

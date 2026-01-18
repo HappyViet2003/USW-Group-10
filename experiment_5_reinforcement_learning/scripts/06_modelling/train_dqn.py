@@ -1,146 +1,126 @@
 """
 06_modelling/train_dqn.py
-
-Experiment 5: Deep Q-Network (DQN) Training
-Trainiert RL Agent für Bitcoin Trading mit Stable-Baselines3.
+Smart-Version: Schnellere Validierung + GPU Support.
 """
 
 import os
+import sys
 import yaml
 import pandas as pd
 import numpy as np
+import torch
 from stable_baselines3 import DQN
 from stable_baselines3.common.callbacks import EvalCallback, CheckpointCallback
-from stable_baselines3.common.monitor import Monitor
+from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv
+from stable_baselines3.common.env_util import make_vec_env
+
+# Importiere Environment
+script_dir = os.path.dirname(os.path.abspath(__file__))
+sys.path.append(script_dir)
 from trading_env import make_trading_env
 
 # --- KONFIGURATION ---
-script_dir = os.path.dirname(os.path.abspath(__file__))
 params_path = os.path.join(script_dir, "../../conf/params.yaml")
-params = yaml.safe_load(open(params_path))
+if os.path.exists(params_path):
+    params = yaml.safe_load(open(params_path))
 
-# Pfade
-base_data_path = os.path.join(script_dir, params['DATA_ACQUISITON']['DATA_PATH'])
+base_data_path = os.path.join(script_dir, "../../data")
 processed_dir = os.path.join(base_data_path, "processed/prepared")
-models_dir = os.path.join(base_data_path, "../../models")
+models_dir = os.path.join(base_data_path, "models")
+log_dir = os.path.join(models_dir, "tensorboard")
 os.makedirs(models_dir, exist_ok=True)
+os.makedirs(log_dir, exist_ok=True)
 
-print("=" * 70)
-print("DQN TRAINING (EXP 5: REINFORCEMENT LEARNING)")
-print("=" * 70)
+# Hyperparameter
+TOTAL_TIMESTEPS = 500000
+LEARNING_RATE = 0.0001
+BUFFER_SIZE = 100000
+BATCH_SIZE = 64
 
-# 1. Daten laden
-print("\n[1/4] Lade Trainingsdaten...")
-train_df = pd.read_parquet(os.path.join(processed_dir, "train_prepared.parquet"))
-val_df = pd.read_parquet(os.path.join(processed_dir, "val_prepared.parquet"))
+def main():
+    print("=" * 70)
+    print("STARTE DQN TRAINING (OPTIMIZED)")
+    print("=" * 70)
 
-print(f"   Train: {train_df.shape}")
-print(f"   Val: {val_df.shape}")
+    # 1. Hardware Check
+    device = "auto"
+    if torch.cuda.is_available():
+        print(f"   🚀 GPU gefunden: {torch.cuda.get_device_name(0)}")
+    else:
+        print("   🐢 Keine GPU gefunden - Training läuft auf CPU.")
 
-# 2. Environments erstellen
-print("\n[2/4] Erstelle Trading Environments...")
+    # Multiprocessing Setup
+    cpu_count = os.cpu_count() or 1
+    n_envs = max(1, min(12, cpu_count - 1)) # Nutze Power!
+    print(f"   ⚡ Multiprocessing: {n_envs} Envs.")
 
-train_env = make_trading_env(
-    train_df, 
-    initial_balance=100000, 
-    fee_rate=0.001,
-    max_steps=len(train_df)
-)
+    # 2. Daten laden
+    print("\n[1/4] Lade Trainingsdaten...")
+    train_path = os.path.join(processed_dir, "train_prepared.parquet")
+    val_path = os.path.join(processed_dir, "val_prepared.parquet")
 
-val_env = make_trading_env(
-    val_df,
-    initial_balance=100000,
-    fee_rate=0.001,
-    max_steps=len(val_df)
-)
+    train_df = pd.read_parquet(train_path)
+    val_df = pd.read_parquet(val_path)
+    print(f"   Train: {train_df.shape}")
 
-# Wrap with Monitor for logging
-train_env = Monitor(train_env)
-val_env = Monitor(val_env)
+    # 3. Environments erstellen
+    print(f"\n[2/4] Erstelle Environments...")
 
-print("   ✅ Training Environment")
-print("   ✅ Validation Environment")
+    def make_train_env():
+        return make_trading_env(train_df, initial_balance=100000, fee_rate=0.001)
 
-# 3. DQN Model definieren
-print("\n[3/4] Definiere DQN Model...")
+    # Train Env: Multiprocessing für Speed
+    env = make_vec_env(make_train_env, n_envs=n_envs, vec_env_cls=SubprocVecEnv)
 
-model = DQN(
-    policy='MlpPolicy',
-    env=train_env,
-    learning_rate=0.0001,
-    buffer_size=100000,
-    learning_starts=1000,
-    batch_size=64,
-    tau=0.005,
-    gamma=0.99,
-    train_freq=4,
-    gradient_steps=1,
-    target_update_interval=1000,
-    exploration_fraction=0.1,
-    exploration_initial_eps=1.0,
-    exploration_final_eps=0.05,
-    max_grad_norm=10,
-    tensorboard_log=os.path.join(models_dir, "tensorboard"),
-    verbose=1,
-    seed=42
-)
+    # Validation Env: Single-Core, aber limitiert auf 10k Steps (SPEED FIX!)
+    eval_env = DummyVecEnv([lambda: make_trading_env(val_df, initial_balance=100000, fee_rate=0.001, max_steps=10000)])
 
-print("   ✅ DQN Model erstellt")
-print(f"   Policy: MlpPolicy")
-print(f"   Learning Rate: 0.0001")
-print(f"   Buffer Size: 100,000")
-print(f"   Batch Size: 64")
+    # 4. Callbacks
+    eval_callback = EvalCallback(
+        eval_env,
+        best_model_save_path=models_dir,
+        log_path=log_dir,
+        eval_freq=max(10000 // n_envs, 1),
+        deterministic=True,
+        render=False,
+        verbose=1
+    )
 
-# 4. Callbacks
-print("\n[4/4] Setup Callbacks...")
+    checkpoint_callback = CheckpointCallback(
+        save_freq=max(50000 // n_envs, 1),
+        save_path=models_dir,
+        name_prefix="dqn_checkpoint"
+    )
 
-# Evaluation Callback (testet auf Validation Set)
-eval_callback = EvalCallback(
-    val_env,
-    best_model_save_path=models_dir,
-    log_path=models_dir,
-    eval_freq=5000,
-    deterministic=True,
-    render=False,
-    verbose=1
-)
+    # 5. Modell Definition
+    print("\n[3/4] Definiere DQN Model...")
+    model = DQN(
+        "MlpPolicy",
+        env,
+        learning_rate=LEARNING_RATE,
+        buffer_size=BUFFER_SIZE,
+        batch_size=BATCH_SIZE,
+        gamma=0.99,
+        tau=0.005,
+        exploration_fraction=0.1,
+        verbose=1,
+        device=device,
+        tensorboard_log=log_dir
+    )
 
-# Checkpoint Callback (speichert regelmäßig)
-checkpoint_callback = CheckpointCallback(
-    save_freq=10000,
-    save_path=models_dir,
-    name_prefix='dqn_checkpoint'
-)
+    # 6. Training
+    print("\n" + "="*70)
+    print(f"STARTE TRAINING... (Lehn dich zurück)")
+    print("="*70)
 
-print("   ✅ Eval Callback (every 5k steps)")
-print("   ✅ Checkpoint Callback (every 10k steps)")
+    model.learn(total_timesteps=TOTAL_TIMESTEPS, callback=[eval_callback, checkpoint_callback])
 
-# 5. Training
-print("\n" + "=" * 70)
-print("STARTE DQN TRAINING")
-print("=" * 70)
-print("⚠️  Training kann 30-60 Minuten dauern!")
-print("⚠️  Überwache mit TensorBoard:")
-print(f"    tensorboard --logdir {os.path.join(models_dir, 'tensorboard')}")
-print("=" * 70)
+    final_path = os.path.join(models_dir, "dqn_final.zip")
+    model.save(final_path)
+    print(f"\n✅ Training fertig! Modell: {final_path}")
 
-TOTAL_TIMESTEPS = 200000
-
-model.learn(
-    total_timesteps=TOTAL_TIMESTEPS,
-    callback=[eval_callback, checkpoint_callback],
-    log_interval=100,
-    progress_bar=False  # Disabled (tqdm not installed)
-)
-
-# 6. Speichern
-print("\n[6/6] Speichere finales Modell...")
-final_model_path = os.path.join(models_dir, "dqn_final.zip")
-model.save(final_model_path)
-print(f"   ✅ Modell: {final_model_path}")
-
-print("\n" + "=" * 70)
-print("✅ DQN TRAINING ABGESCHLOSSEN")
-print("=" * 70)
-print(f"\nNächster Schritt:")
-print(f"  python 07_deployment/01_backtesting/run_rl_backtest.py")
+if __name__ == "__main__":
+    import multiprocessing
+    if sys.platform == 'win32':
+        multiprocessing.freeze_support()
+    main()
